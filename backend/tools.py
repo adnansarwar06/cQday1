@@ -74,7 +74,7 @@ register_tool(Tool(
 
 register_tool(Tool(
     name="edit_file",
-    description=f"Edits an existing file by replacing or appending content. Input must be a JSON object with 'filepath', 'content', and optional 'append' keys. Schema: {EditFileRequest.model_json_schema()}",
+    description=f"Edits an existing file by replacing or appending content. Use 'knowledge_base/sample_document.txt' to append to the knowledge base or 'output/filename.txt' for output files. Set append=true to preserve existing content. Input must be a JSON object with 'filepath', 'content', and optional 'append' keys. Schema: {EditFileRequest.model_json_schema()}",
     coroutine=edit_file,
     request_model=EditFileRequest
 )) 

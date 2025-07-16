@@ -54,7 +54,7 @@ async def run_assistant_streaming(request: AssistantRequest) -> AsyncGenerator[D
         logger.info("Routing to ReAct Agent")
         react_request = ReActAgentRequest(user_prompt=user_prompt)
         async for step in run_react_agent_streaming(react_request, tools=active_tools):
-            if step.get("type") in ["thought_start", "thought_chunk", "action_start", "observation", "error"]:
+            if step.get("type") in ["thought_chunk", "action_start", "observation", "error"]:
                 # Stream content immediately to the frontend
                 yield {"type": "content", "content": step["content"]}
             elif step.get("type") == "final_answer":

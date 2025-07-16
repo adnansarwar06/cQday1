@@ -1,10 +1,33 @@
-Case Study: TFG Boosts Online Conversion Rate by 35.2% With Bloomreach Clarity
+Bloomreach AI Case Study: MKM Future-proofs Its Business with Composable Commerce
 
-Summary:
-TFG, a leading fashion retailer, achieved a 35.2% increase in online conversion rates through the adoption of Bloomreach Clarity, an AI-powered conversational shopping assistant. Bloomreach Clarity engages shoppers proactively with conversational AI that mimics expert sales associates, helping customers find the right products with tailored recommendations in real time. This interactive guided shopping experience reduces bounce rates and improves sales effectiveness by addressing shopper intent and preferences seamlessly.
+Overview:
+MKM, the largest independent builder's merchant in the UK with 2,500 employees and 100+ branches, partnered with Bloomreach to modernize its ecommerce digital experience. The company sought to adopt a customer-focused digital strategy leveraging AI to transform its B2B/B2C commerce approach.
 
-Why This Case Study is a Strong Fit for Prospects:
-- Demonstrates measurable uplift in key sales metrics (35.2% conversion increase).
-- Highlights the power of AI-driven personalized conversational shopping to scale sales associate impact.
-- Showcases use of advanced AI technology integrating real-time customer and product data.
-- Provides a compelling example for AI companies looking to illustrate how AI solutions drive revenue and customer engagement.
+Challenges:
+- Aging tech stack with slow load times and high maintenance costs
+- Disparate product data and lack of single customer view or personalization
+- Need to replicate excellent in-store customer service online
+- Desire to drive online revenue and improve customer experience
+
+Solutions:
+- Implemented Bloomreach Commerce Experience Cloud: Engagement, Discovery, Content
+- Leveraged AI-powered personalization across channels for hyper-personalized shopping
+- Utilized composable commerce architecture with Bloomreach and partners for agility
+- Created localized, segmented experiences tailored to diverse customer needs
+
+Results (within 4 weeks of launch):
+- +43% increase in total web revenue
+- +27% increase in total web orders
+- +7.9% increase in average order value
+- +75% improvement in average page load speed
+- +77% boost in average time spent on page
+- +39% increase in site traffic YoY
+
+Why this case study is a strong fit for AI company sales reps:
+- Demonstrates real, measurable business impact from AI integration
+- Highlights AI’s role in digital transformation for traditional industries
+- Shows how AI personalization drives revenue growth and customer engagement
+- Illustrates scalable, omnichannel AI strategy in a complex B2B/B2C environment
+- Provides compelling metrics and quotes from client leadership confirming value
+
+This makes MKM a compelling example for prospects considering AI solutions to elevate their commerce experience and boost revenue.

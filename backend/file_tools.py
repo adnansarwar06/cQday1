@@ -116,7 +116,7 @@ class EditFileRequest(BaseModel):
     """Request model for editing an existing file."""
 
     filepath: str = Field(
-        ..., description="Path to the file to edit. Use 'output/filename' format."
+        ..., description="Path to the file to edit. Use 'knowledge_base/filename' to edit knowledge base files or 'output/filename' for output files."
     )
     content: str = Field(
         ..., description="New content to write to the file (replaces existing content)."
