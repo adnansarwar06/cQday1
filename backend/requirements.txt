@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+openai
+httpx
+beautifulsoup4
+sse-starlette
+pydantic
+python-dotenv
+pytest
+pytest-asyncio
+requests 
