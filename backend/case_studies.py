@@ -1,5 +1,4 @@
 import re
-import httpx
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -8,7 +7,7 @@ from urllib.parse import urlparse
 from collections import Counter
 
 from web_search import web_search, WebSearchRequest, WebSearchResponse
-from llm import get_openai_response_non_stream, LLMProviderError
+from llm import get_openai_completion, LLMProviderError
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -166,7 +165,11 @@ async def case_studies_search(request: CaseStudyRequest):
     # Step 1: Use LLM to generate the base search query
     try:
         llm_prompt = GENERATE_SEARCH_QUERY_PROMPT_TEMPLATE.format(user_prompt=request.user_prompt)
-        search_query = await get_openai_response_non_stream(llm_prompt)
+        
+        # Buffer the response from the streaming LLM call
+        llm_stream = get_openai_completion([{"role": "user", "content": llm_prompt}])
+        search_query = "".join([chunk async for chunk in llm_stream])
+        
         # Clean up the query
         search_query = search_query.strip().replace('"', '')
         logger.info(f"LLM generated search query: '{search_query}'")

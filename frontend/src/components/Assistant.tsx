@@ -22,7 +22,6 @@ const Assistant = () => {
   const [mode, setMode] = useState<'standard' | 'agent'>('standard');
   const [enabledTools, setEnabledTools] = useState<string[]>([]);
   const [isToolsOpen, setIsToolsOpen] = useState(false);
-  const [lastTrace, setLastTrace] = useState<any[]>([]);
 
   const apiUrl = process.env.NEXT_PUBLIC_ASSISTANT_API_URL || 'http://127.0.0.1:8000/v2/assistant';
   const runtime = useChatRuntime({
@@ -30,13 +29,6 @@ const Assistant = () => {
     body: {
       mode,
       enabled_tools: enabledTools,
-    },
-    onFinish: (message: any) => {
-      if (message.data?.trace && Array.isArray(message.data.trace)) {
-        setLastTrace(message.data.trace);
-      } else {
-        setLastTrace([]);
-      }
     },
   });
 

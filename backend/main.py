@@ -4,9 +4,8 @@ import json
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sse_starlette.sse import EventSourceResponse
 from starlette.responses import StreamingResponse
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 
 
@@ -42,28 +41,6 @@ app.include_router(file_tools_router)
 # app.include_router(case_studies_router)
 
 
-class ChatRequest(BaseModel):
-    messages: List[Dict[str, Any]]
-
-
-@app.post("/chat")
-async def chat_endpoint(request: ChatRequest):
-    """
-    Endpoint to handle chat requests.
-    It uses the LLM to generate a response and streams it back to the client.
-    """
-    async def event_generator():
-        try:
-            async for chunk in get_openai_completion(request.messages):
-                yield chunk
-        except LLMProviderError as e:
-            print(f"Error: {e}")
-            # Yield a JSON object with an error message
-            yield f'{{"error": "{str(e)}"}}'
-
-    return EventSourceResponse(event_generator())
-
-
 @app.post("/v2/assistant")
 async def assistant_endpoint(request: AssistantRequest):
     """
@@ -73,9 +50,7 @@ async def assistant_endpoint(request: AssistantRequest):
     This endpoint is compliant with the Vercel AI SDK streaming protocol.
     """
     logger.info(f"Backend - Received request with mode: {request.mode}, tools: {request.enabled_tools}")
-    logger.info(f"Backend - Number of messages: {len(request.messages)}")
-    for i, msg in enumerate(request.messages):
-        logger.info(f"Backend - Message {i}: role={msg.role}, content_type={type(msg.content)}")
+    
     async def event_generator():
         try:
             # Stream responses using Vercel AI SDK data stream protocol
@@ -83,9 +58,6 @@ async def assistant_endpoint(request: AssistantRequest):
                 if chunk["type"] == "content":
                     # Text part format: 0:string\n
                     yield f"0:{json.dumps(chunk['content'])}\n"
-                elif chunk["type"] == "trace":
-                    # Data part format: 2:Array<JSONValue>\n
-                    yield f"2:{json.dumps([chunk['data']])}\n"
             
             # Finish message part format: d:{finishReason, usage}\n
             yield f'd:{json.dumps({"finishReason": "stop", "usage": {"promptTokens": 0, "completionTokens": 0}})}\n'

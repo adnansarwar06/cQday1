@@ -2,11 +2,11 @@
 This module implements the agent orchestration logic.
 """
 import logging
-from typing import Dict, Any, List, Optional, Callable, Awaitable, Type
+from typing import Dict, Any, List, Optional, Callable, Awaitable, Type, AsyncGenerator
 from pydantic import BaseModel, Field
 import json
 
-from llm import get_openai_response_non_stream
+from llm import get_openai_completion
 from web_search import WebSearchRequest, web_search
 from case_studies import CaseStudyRequest, case_studies_search
 from tools import Tool, TOOL_REGISTRY
@@ -118,8 +118,7 @@ def format_tool_result(tool_name: str, result: Any) -> str:
         return str(result)
 
 
-AGENT_SYSTEM_PROMPT = """
-You are a helpful assistant with access to a variety of tools. Your role is to analyze user requests and decide the best course of action.
+AGENT_SYSTEM_PROMPT = """You are a helpful assistant with access to a variety of tools. Your role is to analyze user requests and decide the best course of action.
 
 You can either respond directly to the user or use one of the available tools.
 
@@ -130,22 +129,25 @@ To use a tool, respond with a JSON object with two keys: "tool_name" and "tool_i
 - "tool_name" must be one of the available tool names.
 - "tool_input" must be a JSON object that conforms to the schema for that tool.
 
-If you believe you can answer the user's request without using a tool, then respond with your answer in plain text.
-
-User request: {user_prompt}
-"""
+If you believe you can answer the user's request without using a tool, then respond with your answer in plain text."""
 
 class AgentRequest(BaseModel):
     """Request model for the /agent endpoint."""
     user_prompt: str
 
-async def route_request(request: AgentRequest, tools: Optional[Dict[str, Tool]] = None):
+async def route_request(request: AgentRequest, tools: Optional[Dict[str, Tool]] = None) -> AsyncGenerator[str, None]:
     """
     Routes the user's request to the appropriate tool or to the default LLM chat.
+    The response from the LLM is streamed to the client as it's generated.
+    If the response is a tool call, it's executed after the stream is complete,
+    and the result is then streamed back to the client.
     
     Args:
         request: The user's request object.
         tools: An optional dictionary of tools to use. If None, uses the global TOOL_REGISTRY.
+
+    Yields:
+        The agent's response, which could be a direct chat message or the result of a tool call.
     """
     
     # If a specific toolset isn't provided, default to the global registry
@@ -158,53 +160,62 @@ async def route_request(request: AgentRequest, tools: Optional[Dict[str, Tool]] 
             tool_definitions += f"- {tool_name}: {tool.description}\n"
             
     # If no tools are available, the agent will default to chat mode.
-    prompt = AGENT_SYSTEM_PROMPT.format(
-        tools=tool_definitions,
-        user_prompt=request.user_prompt
-    )
+    system_prompt = AGENT_SYSTEM_PROMPT.format(tools=tool_definitions)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": request.user_prompt}
+    ]
 
-    logger.info("Routing agent request...")
-    llm_response = await get_openai_response_non_stream(prompt)
-    logger.info(f"LLM response for routing: {llm_response}")
+    logger.info("Routing agent request and streaming LLM response...")
+    
+    llm_stream = get_openai_completion(messages)
+    
+    # Stream the LLM response to the client while buffering it for tool call detection
+    llm_response_buffer = []
+    async for chunk in llm_stream:
+        llm_response_buffer.append(chunk)
+        yield chunk
+
+    full_llm_response = "".join(llm_response_buffer)
+    logger.info(f"Full LLM response received: {full_llm_response}")
 
     try:
-        # Try to parse the response as a JSON object for tool invocation
-        tool_call = json.loads(llm_response)
+        # After streaming the raw response, check if it's a tool call
+        tool_call = json.loads(full_llm_response)
         tool_name = tool_call.get("tool_name")
         tool_input = tool_call.get("tool_input")
 
         if tool_name in tools:
             logger.info(f"Invoking tool: {tool_name} with input: {tool_input}")
+            yield f"\n\n> **Invoking tool: `{tool_name}`**\n\n" # Provide feedback to the user
+            
             tool = tools[tool_name]
             
             # Validate and instantiate the request model
             if tool.request_model:
                 try:
-                    # Create an instance of the request model from the input
-                    # The request object is the single argument to the coroutine
                     request_instance = tool.request_model(**tool_input)
                 except Exception as e:
                     logger.error(f"Tool input validation failed: {e}")
-                    # Respond to the user with a helpful error message.
-                    # In a real-world scenario, you might want to retry or have the LLM correct the input.
-                    return f"I tried to use the '{tool_name}' tool, but the input was invalid. Here is the error: {e}"
+                    yield f"> **Error:** Tool input validation failed: {e}"
+                    return
                 
-                # Execute the tool's coroutine
                 result = await tool.coroutine(request_instance)
             else:
-                # This would be for tools that don't require any input arguments.
                 result = await tool.coroutine()
 
-            # Format the tool result nicely for the user
-            return format_tool_result(tool_name, result)
+            # Format and stream the tool result
+            yield format_tool_result(tool_name, result)
         else:
             logger.warning(f"LLM tried to call an unknown tool: {tool_name}")
-            return "An internal error occurred: received a request for an unknown tool."
+            # The response was already streamed, so we don't need to yield it again.
+            # We could optionally yield an error message here.
+            pass
 
     except json.JSONDecodeError:
-        # If it's not a JSON object, it's a direct response from the LLM
-        logger.info("No tool invocation found, returning direct LLM response.")
-        return llm_response
+        # The response was not a valid JSON, so it's treated as a direct answer.
+        # The content has already been streamed, so there's nothing more to do.
+        logger.info("Response was not a tool call. Streaming complete.")
     except Exception as e:
         logger.error(f"An unexpected error occurred during agent routing: {e}")
-        return "An unexpected error occurred while processing your request." 
+        yield f"\n\n> **Error:** An unexpected error occurred: {e}" 

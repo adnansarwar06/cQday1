@@ -1,17 +1,10 @@
-Case Study Summary: MKM - Future-Proofing Business with Bloomreach AI-Powered Composable Commerce
+Case Study: TFG Boosts Online Conversion Rate by 35.2% With Bloomreach Clarity
 
-MKM is the largest independent builder's merchant in the UK, serving B2B, B2C, and B2B2C customers with over 100 branches and 2,500 employees. Facing challenges with an aging tech stack and a website that did not reflect its stellar in-branch experience, MKM partnered with Bloomreach alongside Vue Storefront, BigCommerce, and Brave Bison to modernize its digital presence.
+Summary:
+TFG, a leading fashion retailer, achieved a 35.2% increase in online conversion rates through the adoption of Bloomreach Clarity, an AI-powered conversational shopping assistant. Bloomreach Clarity engages shoppers proactively with conversational AI that mimics expert sales associates, helping customers find the right products with tailored recommendations in real time. This interactive guided shopping experience reduces bounce rates and improves sales effectiveness by addressing shopper intent and preferences seamlessly.
 
-Using the Bloomreach Commerce Experience Cloud—comprising Bloomreach Content, Engagement, and Autonomous Search—MKM implemented a composable commerce architecture that enabled hyper-personalized and localized experiences tailored to unique customer segments across different locations.
-
-Within just four weeks of going live, MKM experienced:
-- 7.9% increase in average order value (AOV)
-- 43% increase in total web revenue
-- 77% increase in average time spent on site
-- 39% year-over-year increase in site traffic
-- 75% improvement in average page load speed
-- 27% increase in total web orders
-
-MKM's digital transformation empowered the company to replicate its excellent in-branch customer service online, deliver personalized experiences, and optimize operational efficiency, positioning it strongly for the evolving market landscape.
-
-This case study exemplifies how Bloomreach's AI-driven marketing automation, intelligent search, and unified content management drive tangible, rapid business results for complex multichannel commerce businesses.
+Why This Case Study is a Strong Fit for Prospects:
+- Demonstrates measurable uplift in key sales metrics (35.2% conversion increase).
+- Highlights the power of AI-driven personalized conversational shopping to scale sales associate impact.
+- Showcases use of advanced AI technology integrating real-time customer and product data.
+- Provides a compelling example for AI companies looking to illustrate how AI solutions drive revenue and customer engagement.

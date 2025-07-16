@@ -1,6 +1,6 @@
 import pytest
 from agents import route_request, AgentRequest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 @pytest.mark.asyncio
 async def test_agent_handles_nonexistent_tool_request():
@@ -17,13 +17,17 @@ async def test_agent_handles_nonexistent_tool_request():
     request = AgentRequest(user_prompt="Can you please schedule a meeting for me for tomorrow?")
     
     # We mock the LLM's response to simulate it calling a fake tool.
-    with patch("agents.get_openai_response_non_stream") as mock_llm_call:
-        mock_llm_call.return_value = '{"tool_name": "schedule_meeting", "tool_input": {"time": "tomorrow"}}'
-        
+    mock_response = '{"tool_name": "schedule_meeting", "tool_input": {"time": "tomorrow"}}'
+    
+    async def mock_stream(*args, **kwargs):
+        yield mock_response
+
+    with patch("agents.get_openai_completion", new=mock_stream):
         print(f"User Prompt: \"{request.user_prompt}\"")
-        print(f"Mocked LLM Response: {mock_llm_call.return_value}")
+        print(f"Mocked LLM Response: {mock_response}")
         
-        response = await route_request(request)
+        response_generator = route_request(request)
+        response = "".join([chunk async for chunk in response_generator])
         
         print(f"Agent Final Response: \"{response}\"")
         
@@ -49,13 +53,17 @@ async def test_agent_handles_invalid_tool_input():
     
     # We mock the LLM's response to simulate it providing bad input.
     # The `web_search` tool expects a `query` field, not `search_term`.
-    with patch("agents.get_openai_response_non_stream") as mock_llm_call:
-        mock_llm_call.return_value = '{"tool_name": "web_search", "tool_input": {"search_term": "stuff"}}'
-        
+    mock_response = '{"tool_name": "web_search", "tool_input": {"search_term": "stuff"}}'
+
+    async def mock_stream(*args, **kwargs):
+        yield mock_response
+
+    with patch("agents.get_openai_completion", new=mock_stream):
         print(f"User Prompt: \"{request.user_prompt}\"")
-        print(f"Mocked LLM Response: {mock_llm_call.return_value}")
+        print(f"Mocked LLM Response: {mock_response}")
         
-        response = await route_request(request)
+        response_generator = route_request(request)
+        response = "".join([chunk async for chunk in response_generator])
         
         print(f"Agent Final Response: \"{response}\"")
         

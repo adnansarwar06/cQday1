@@ -9,10 +9,10 @@ complex user queries.
 import logging
 import json
 import re
-from typing import Dict, Any, List, Optional, Callable, Awaitable, Type
+from typing import Dict, Any, List, Optional, Callable, Awaitable, Type, AsyncGenerator
 from pydantic import BaseModel, Field
 
-from llm import get_openai_response_non_stream
+from llm import get_openai_completion
 from tools import Tool, TOOL_REGISTRY
 
 # Configure logging
@@ -55,106 +55,119 @@ class ReActAgentExecutor:
         self.tools = tools
         self.max_steps = max_steps
         self.scratchpad: List[str] = []
-        self.trace: List[Dict[str, Any]] = []
 
     def _get_tool_definitions(self) -> str:
         """Formats the tool descriptions for the LLM prompt."""
         return "\n".join([f"- {name}: {tool.description}" for name, tool in self.tools.items()])
 
-    async def _execute_step(self, user_prompt: str, step_callback=None) -> str:
-        """Performs a single Thought-Action-Observation step."""
+    async def _execute_step(self, user_prompt: str) -> AsyncGenerator[Dict[str, Any], None]:
+        """Performs a single Thought-Action-Observation step with real-time streaming."""
         
-        # 1. THOUGHT
+        # 1. THOUGHT - Stream in real-time
         prompt = REACT_SYSTEM_PROMPT.format(
             tools=self._get_tool_definitions(),
             scratchpad="\n".join(self.scratchpad),
             user_prompt=user_prompt
         )
         
-        llm_response = await get_openai_response_non_stream(prompt)
-        logger.info(f"LLM Response:\n{llm_response}")
-        self.scratchpad.append(f"Thought: {llm_response}")
+        llm_stream = get_openai_completion([{"role": "user", "content": prompt}])
         
-        thought_step = {"step_type": "Thought", "output": llm_response}
-        self.trace.append(thought_step)
-        if step_callback:
-            await step_callback(thought_step)
+        # Start the thought with a prefix
+        yield {"type": "thought_start", "content": "**Thought:** "}
+        
+        # Stream the thought process in real-time while buffering for action detection
+        llm_response_buffer = []
+        async for chunk in llm_stream:
+            llm_response_buffer.append(chunk)
+            # Stream each chunk immediately to the frontend
+            yield {"type": "thought_chunk", "content": chunk}
+        
+        # Add a newline after the thought is complete
+        yield {"type": "thought_chunk", "content": "\n\n"}
+        
+        llm_response = "".join(llm_response_buffer)
+        
+        # Update scratchpad with the full thought
+        full_thought = f"Thought: {llm_response}"
+        self.scratchpad.append(full_thought)
+        logger.info(f"Full thought: {full_thought}")
 
         # 2. ACTION
+        action_match = re.search(r"```json\n(.*?)\n```", llm_response, re.DOTALL)
+
+        if not action_match:
+            # No action found, assume this is the final answer
+            final_answer = llm_response.replace("Thought:", "").strip()
+            yield {"type": "final_answer", "content": final_answer}
+            return
+
+        action_json_str = action_match.group(1).strip()
+        
         try:
-            # More robustly find the JSON block for the action using regex
-            action_match = re.search(r"```json\n(.*?)\n```", llm_response, re.DOTALL)
-
-            if action_match:
-                action_json_str = action_match.group(1).strip()
-                tool_call = json.loads(action_json_str)
-                tool_name = tool_call.get("tool_name")
-                tool_input = tool_call.get("tool_input")
-                
-                if tool_name in self.tools:
-                    action_step = {"step_type": "Action", "tool_name": tool_name, "tool_input": tool_input}
-                    self.trace.append(action_step)
-                    if step_callback:
-                        await step_callback(action_step)
-                    
-                    # 3. OBSERVATION
-                    tool = self.tools[tool_name]
-                    
-                    if not tool.request_model:
-                        # This handles tools that might not have input schemas
-                        result = await tool.coroutine()
-                    else:
-                        request_instance = tool.request_model(**tool_input)
-                        result = await tool.coroutine(request_instance)
-                    
-                    observation = f"Observation: {str(result)}"
-                    self.scratchpad.append(observation)
-                    
-                    obs_step = {"step_type": "Observation", "output": str(result)}
-                    self.trace.append(obs_step)
-                    if step_callback:
-                        await step_callback(obs_step)
-                    return "" # Indicates the loop should continue
-                else:
-                    return f"Error: Tool '{tool_name}' not found."
-            else:
-                # No action found, assume this is the final answer
-                final_answer = llm_response.replace("Thought:", "").strip()
-                return final_answer
-
-        except Exception as e:
-            logger.error(f"Error during action parsing or execution: {e}")
-            observation = f"Error: Could not parse or execute action. Details: {e}"
-            self.scratchpad.append(observation)
+            tool_call = json.loads(action_json_str)
+            tool_name = tool_call.get("tool_name")
+            tool_input = tool_call.get("tool_input", {})
             
-            error_step = {"step_type": "Error", "output": observation}
-            self.trace.append(error_step)
-            if step_callback:
-                await step_callback(error_step)
-            return "" # Continue the loop to let the agent recover
+            # Show action being executed
+            yield {"type": "action_start", "content": f"**Action:** Using `{tool_name}` tool\n\n"}
 
-    async def run(self, user_prompt: str, step_callback=None) -> Dict[str, Any]:
+            if tool_name in self.tools:
+                # 3. OBSERVATION
+                tool = self.tools[tool_name]
+                
+                if tool.request_model:
+                    request_instance = tool.request_model(**tool_input)
+                    result = await tool.coroutine(request_instance)
+                else:
+                    result = await tool.coroutine()
+                
+                observation = f"Observation: {str(result)}"
+                self.scratchpad.append(observation)
+                yield {"type": "observation", "content": f"**Observation:** {str(result)}\n\n"}
+            else:
+                error_message = f"Error: Tool '{tool_name}' not found."
+                self.scratchpad.append(error_message)
+                yield {"type": "error", "content": f"**Error:** {error_message}\n\n"}
+        
+        except json.JSONDecodeError as e:
+            error_message = f"Error: Could not parse action JSON. Details: {e}"
+            self.scratchpad.append(error_message)
+            yield {"type": "error", "content": f"**Error:** {error_message}\n\n"}
+        except Exception as e:
+            error_message = f"Error: An unexpected error occurred. Details: {e}"
+            self.scratchpad.append(error_message)
+            yield {"type": "error", "content": f"**Error:** {error_message}\n\n"}
+
+    async def run(self, user_prompt: str) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        Runs the ReAct agent loop until a final answer is found or max_steps is reached.
+        Runs the ReAct agent loop, yielding each step as it occurs.
         """
         for i in range(self.max_steps):
             logger.info(f"--- ReAct Step {i+1}/{self.max_steps} ---")
-            final_answer = await self._execute_step(user_prompt, step_callback)
-            if final_answer:
-                logger.info(f"Final Answer Found: {final_answer}")
-                return {"final_answer": final_answer, "trace": self.trace}
-        
-        return {"final_answer": "Agent stopped after reaching max steps.", "trace": self.trace}
+            step_generator = self._execute_step(user_prompt)
+            final_answer_found = False
+            async for step in step_generator:
+                yield step
+                if step.get("type") == "final_answer":
+                    final_answer_found = True
+                    break
+            
+            if final_answer_found:
+                break
+        else:
+            yield {"type": "final_answer", "content": "Agent stopped after reaching max steps."}
 
 
-async def run_react_agent(request: ReActAgentRequest, tools: Optional[Dict[str, Tool]] = None, step_callback=None):
+async def run_react_agent_streaming(request: ReActAgentRequest, tools: Optional[Dict[str, Tool]] = None) -> AsyncGenerator[Dict[str, Any], None]:
     """
-    Entrypoint for running the ReAct agent.
+    Entrypoint for running the ReAct agent with streaming.
     
     Args:
         request: The user's request object.
         tools: An optional dictionary of tools to use. If None, uses the global TOOL_REGISTRY.
-        step_callback: Optional callback function to stream intermediate steps.
+        
+    Yields:
+        A dictionary representing each step of the ReAct agent's execution.
     """
     
     # If a specific toolset isn't provided, default to the global registry
@@ -162,4 +175,5 @@ async def run_react_agent(request: ReActAgentRequest, tools: Optional[Dict[str, 
         tools = TOOL_REGISTRY
         
     executor = ReActAgentExecutor(tools=tools, max_steps=request.max_steps)
-    return await executor.run(request.user_prompt, step_callback) 
+    async for step in executor.run(request.user_prompt):
+        yield step 

@@ -55,30 +55,4 @@ async def get_openai_completion(messages: List[Dict[str, Any]]) -> AsyncGenerato
             if content:
                 yield content
     except Exception as e:
-        raise LLMProviderError(f"OpenAI API request failed: {e}")
-
-async def get_openai_response_non_stream(prompt: str) -> str:
-    """
-    Gets a single, non-streaming response from the OpenAI API.
-
-    Args:
-        prompt: A single string prompt to send to the LLM.
-
-    Returns:
-        The LLM's response as a single string.
-
-    Raises:
-        LLMProviderError: If the OpenAI API call fails.
-    """
-    try:
-        response = await client.chat.completions.create(
-            model=OPENAI_MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            stream=False,
-        )
-        content = response.choices[0].message.content
-        if content:
-            return content
-        raise LLMProviderError("OpenAI API returned an empty response.")
-    except Exception as e:
         raise LLMProviderError(f"OpenAI API request failed: {e}") 
