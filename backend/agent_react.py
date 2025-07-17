@@ -33,15 +33,18 @@ IMPORTANT INSTRUCTIONS:
 1. **Always start with Thought**: Analyze what you need to do next. Think step by step.
 2. **Use Actions when needed**: If you need information or to perform a task, use a tool by responding with ONLY a JSON block in ```json markdown tags. The JSON must have "tool_name" and "tool_input" keys.
 3. **Continue reasoning**: After each observation, think about what to do next. Don't stop until you have a complete answer.
-4. **Only give final answer when truly complete**: Only provide a final answer when you have all the information needed to fully address the user's request.
+4. **WHEN YOU HAVE ALL NEEDED INFORMATION**: Once you have gathered sufficient information to fully answer the user's request, provide your final answer directly WITHOUT using any JSON blocks or tool calls. Just write your comprehensive response as plain text.
+
+**HOW TO FINISH:**
+- When you have enough information to answer the user's question completely, simply provide your final answer in plain text
+- Do NOT include any JSON blocks in your final response
+- Do NOT say "I need to" or "Let me" in your final answer - just provide the complete answer directly
 
 **FILE OPERATION GUIDELINES:**
 - To save content to the knowledge base, ALWAYS use: "knowledge_base/sample_document.txt" with append=true
 - To create new files, use: "output/filename.txt" format  
 - NEVER create new files when you should append to knowledge_base/sample_document.txt
 - When saving research results, case studies, or information for future reference, use knowledge_base/sample_document.txt
-
-You MUST continue the thought-action-observation cycle until you can provide a comprehensive answer.
 
 Here is your work history (Scratchpad):
 {scratchpad}
@@ -82,22 +85,52 @@ class ReActAgentExecutor:
         
         llm_stream = get_openai_completion([{"role": "user", "content": prompt}])
         
-        # Collect the full response first, then clean and stream
+        # Signal that thinking has started
+        yield {"type": "thought_start", "content": ""}
+        
+        # Stream the response in real-time and also collect it
         llm_response_buffer = []
+        current_chunk_buffer = ""
+        in_json_block = False
         
         async for chunk in llm_stream:
             llm_response_buffer.append(chunk)
+            current_chunk_buffer += chunk
+            
+            # Check if we're entering or exiting a JSON block
+            if "```json" in current_chunk_buffer and not in_json_block:
+                # Stream everything before the JSON block
+                parts = current_chunk_buffer.split("```json", 1)
+                if parts[0].strip():
+                    yield {"type": "thought_chunk", "content": parts[0]}
+                in_json_block = True
+                current_chunk_buffer = parts[1] if len(parts) > 1 else ""
+            elif "```" in current_chunk_buffer and in_json_block:
+                # We're closing the JSON block, don't stream this content
+                parts = current_chunk_buffer.split("```", 1)
+                in_json_block = False
+                current_chunk_buffer = parts[1] if len(parts) > 1 else ""
+            elif not in_json_block:
+                # Stream non-JSON content immediately, but filter out any remaining JSON patterns
+                if not ('"tool_name"' in chunk or '"tool_input"' in chunk or chunk.strip().startswith('{')):
+                    yield {"type": "thought_chunk", "content": chunk}
+                current_chunk_buffer = ""
+        
+        # Stream any remaining non-JSON content
+        if current_chunk_buffer and not in_json_block:
+            # Filter out any JSON patterns from remaining content
+            if not ('"tool_name"' in current_chunk_buffer or '"tool_input"' in current_chunk_buffer or 
+                   current_chunk_buffer.strip().startswith('{')):
+                yield {"type": "thought_chunk", "content": current_chunk_buffer}
         
         llm_response = "".join(llm_response_buffer)
         
-        # Remove JSON blocks completely from the thought before displaying to user
+        # Remove JSON blocks completely from the thought for scratchpad
         thought_without_json = re.sub(r"```json\n.*?\n```", "", llm_response, flags=re.DOTALL)
         thought_without_json = thought_without_json.strip()
         
-        # Clean and stream the thought without JSON blocks
-        if thought_without_json:
-            clean_thought = thought_without_json.replace('\\n', '\n').replace('\\r', '\r').replace('\\t', '\t')
-            yield {"type": "thought_chunk", "content": clean_thought}
+        # Signal that thinking is complete (this will help frontend know to clean up)
+        yield {"type": "thought_complete", "content": ""}
         
         # Update scratchpad with the full thought
         full_thought = f"Thought: {llm_response}"
@@ -111,17 +144,28 @@ class ReActAgentExecutor:
             # No action found - check if this is truly a final answer or if we need to continue
             cleaned_response = llm_response.replace("Thought:", "").strip()
             
-            # Only treat as final answer if:
-            # 1. The response is substantial (more than 50 characters)
-            # 2. We have attempted at least one action in our scratchpad
-            # 3. The response doesn't look like it's incomplete or asking for more info
+            # Check if this looks like a final answer
             has_previous_actions = any("Action:" in step or "Observation:" in step for step in self.scratchpad)
-            is_substantial = len(cleaned_response) > 50
-            looks_complete = not any(phrase in cleaned_response.lower() for phrase in [
-                "let me", "i need to", "i should", "first i", "i'll search", "i'll check"
-            ])
+            is_substantial = len(cleaned_response) > 30  # Lowered threshold
             
-            if has_previous_actions and is_substantial and looks_complete:
+            # More comprehensive completion indicators
+            incomplete_phrases = [
+                "let me", "i need to", "i should", "first i", "i'll search", "i'll check",
+                "i will", "let's", "now i", "next i", "i must", "i have to"
+            ]
+            looks_incomplete = any(phrase in cleaned_response.lower() for phrase in incomplete_phrases)
+            
+            # Additional indicators that suggest completion
+            completion_indicators = [
+                "based on", "in summary", "therefore", "in conclusion", "the answer is",
+                "here's what", "according to", "the results show", "the information shows"
+            ]
+            looks_complete = any(indicator in cleaned_response.lower() for indicator in completion_indicators)
+            
+            # Treat as final answer if:
+            # 1. We have previous actions AND response is substantial AND doesn't look incomplete
+            # 2. OR if it explicitly looks complete (regardless of previous actions)
+            if (has_previous_actions and is_substantial and not looks_incomplete) or looks_complete:
                 # Remove any JSON-like patterns that might have leaked through
                 final_answer = cleaned_response.replace('{', '').replace('}', '')
                 # Convert \n to actual newlines
@@ -143,11 +187,23 @@ class ReActAgentExecutor:
             
             # Show a human-friendly action message
             action_message = self._format_action_message(tool_name, tool_input)
-            yield {"type": "action_start", "content": f"\n\n{action_message}\n\n"}
+            yield {"type": "action_start", "content": action_message}
 
             if tool_name in self.tools:
-                # 3. OBSERVATION - Execute tool and format result nicely
+                # 3. OBSERVATION - Execute tool and provide streaming updates
                 tool = self.tools[tool_name]
+                
+                # Provide initial progress update
+                if tool_name == "web_search":
+                    query = tool_input.get("query", "")
+                    yield {"type": "action_progress", "content": f"Searching for: '{query}'...\n"}
+                elif tool_name == "case_studies_search":
+                    query = tool_input.get("user_prompt", "")
+                    yield {"type": "action_progress", "content": f"Finding case studies for: '{query}'...\n"}
+                
+                # Add a small delay to show the initial progress
+                import asyncio
+                await asyncio.sleep(0.5)
                 
                 if tool.request_model:
                     request_instance = tool.request_model(**tool_input)
@@ -155,11 +211,58 @@ class ReActAgentExecutor:
                 else:
                     result = await tool.coroutine()
                 
-                # Format the observation in a human-readable way
+                # Provide detailed progress for web search with streaming simulation
+                if tool_name == "web_search" and hasattr(result, 'results'):
+                    yield {"type": "action_progress", "content": f"✅ Found {len(result.results)} search results\n"}
+                    await asyncio.sleep(0.3)
+                    yield {"type": "action_progress", "content": f"🔄 Processing and scraping websites...\n"}
+                    await asyncio.sleep(0.3)
+                    
+                    # Stream each result one by one with delays
+                    for i, search_result in enumerate(result.results[:5], 1):
+                        url = search_result.url
+                        title = search_result.title[:60] + "..." if len(search_result.title) > 60 else search_result.title
+                        # Show scraping progress for each site
+                        yield {"type": "action_progress", "content": f"🔄 Scraping [{i}/{min(5, len(result.results))}]: {title[:40]}...\n"}
+                        await asyncio.sleep(0.6)  # Simulate scraping time
+                        yield {"type": "action_progress", "content": f"• [{i}] {title}\n   📍 {url}\n"}
+                        await asyncio.sleep(0.3)  # Small delay between results
+                    
+                    # Show completion
+                    yield {"type": "action_progress", "content": f"✅ Completed scraping {min(5, len(result.results))} websites\n"}
+                    await asyncio.sleep(0.3)
+                
+                # Provide detailed progress for case studies search
+                elif tool_name == "case_studies_search" and hasattr(result, 'results'):
+                    yield {"type": "action_progress", "content": f"✅ Found {len(result.results)} case studies\n"}
+                    await asyncio.sleep(0.3)
+                    yield {"type": "action_progress", "content": f"🔄 Processing case studies...\n"}
+                    await asyncio.sleep(0.3)
+                    
+                    # Stream each case study one by one
+                    for i, study in enumerate(result.results[:3], 1):
+                        title = study.title[:50] + "..." if len(study.title) > 50 else study.title
+                        yield {"type": "action_progress", "content": f"📚 Analyzing [{i}/{min(3, len(result.results))}]: {title}\n"}
+                        await asyncio.sleep(0.5)
+                        yield {"type": "action_progress", "content": f"• [{i}] {study.title}\n   📍 {study.url}\n"}
+                        await asyncio.sleep(0.3)
+                    
+                    yield {"type": "action_progress", "content": f"✅ Completed analyzing {min(3, len(result.results))} case studies\n"}
+                    await asyncio.sleep(0.3)
+                
+                # Signal that observation/analysis is starting
+                yield {"type": "observation_start", "content": ""}
+                
+                # Format the final observation
                 formatted_observation = self._format_observation(tool_name, result)
                 observation = f"Observation: {str(result)}"
                 self.scratchpad.append(observation)
-                yield {"type": "observation", "content": formatted_observation}
+                
+                # Stream the observation content
+                yield {"type": "observation_chunk", "content": formatted_observation}
+                
+                # Signal observation is complete
+                yield {"type": "observation_complete", "content": ""}
             else:
                 error_message = f"I tried to use a tool called '{tool_name}', but it's not available. Let me try a different approach."
                 self.scratchpad.append(f"Error: Tool '{tool_name}' not found.")
@@ -177,25 +280,33 @@ class ReActAgentExecutor:
     def _format_action_message(self, tool_name: str, tool_input: dict) -> str:
         """Format the action message in a human-readable way."""
         if tool_name == "case_studies_search":
-            return "🔍 Let me search for case studies that match your needs..."
+            prompt = tool_input.get("user_prompt", "your request")
+            return f"🔍 Searching for case studies related to: '{prompt}'"
         elif tool_name == "web_search":
-            return "🌐 I'll search the web for relevant information..."
+            query = tool_input.get("query", "relevant information")
+            return f"🌐 Performing web search for: '{query}'"
         elif tool_name == "create_file":
             filename = tool_input.get("filepath", "a file")
-            return f"📝 I'll create the file '{filename}' for you..."
+            return f"📝 Creating file: '{filename}'"
         elif tool_name == "edit_file":
             filename = tool_input.get("filepath", "the file")
             append_mode = tool_input.get("append", False)
             action_type = "append to" if append_mode else "update"
-            return f"✏️ I'll {action_type} '{filename}' with the new content..."
+            return f"✏️ {action_type.title()} file: '{filename}'"
         elif tool_name == "read_file":
             filename = tool_input.get("filepath", "the file")
-            return f"📖 Let me read '{filename}' to see what's there..."
+            return f"📖 Reading file: '{filename}'"
         elif tool_name == "list_files":
-            directory = tool_input.get("directory_path", "the directory")
-            return f"📁 I'll check what files are in '{directory}'..."
+            directory = tool_input.get("directory", "the directory")
+            # Show the actual directory being listed with descriptive name
+            directory_display = directory
+            if directory == "knowledge_base":
+                directory_display = "knowledge_base/ (Knowledge Base)"
+            elif directory == "output":
+                directory_display = "output/ (Output Directory)"
+            return f"📁 Listing files in: {directory_display}"
         else:
-            return f"⚙️ I'm using the {tool_name} tool to help with your request..."
+            return f"⚙️ Using {tool_name} tool"
 
     def _format_observation(self, tool_name: str, result) -> str:
         """Format the observation in a human-readable way."""
@@ -298,8 +409,11 @@ class ReActAgentExecutor:
             content = str(result.content).replace('{', '').replace('}', '')
             # Convert \n to actual newlines for file content
             content = content.replace('\\n', '\n').replace('\\r', '\n').replace('\\t', '\t')
-            content_preview = content[:300] + "..." if len(content) > 300 else content
-            return f"\n\n📖 **File content:**\n```\n{content_preview}\n```\n\n"
+            filepath = str(result.filepath).replace('{', '').replace('}', '') if hasattr(result, 'filepath') else 'file'
+            size_info = f" ({result.size_bytes} bytes)" if hasattr(result, 'size_bytes') else ""
+            
+            # Show full content with scrollable UI (frontend will handle scrolling)
+            return f"\n\n📖 **File content:**{size_info}\n```\n{content}\n```\n\n"
         else:
             clean_result = str(result).replace('{', '').replace('}', '')
             clean_result = clean_result.replace('\\n', '\n').replace('\\r', '\n').replace('\\t', ' ')
@@ -308,13 +422,28 @@ class ReActAgentExecutor:
     def _format_file_list(self, result) -> str:
         """Format file list results."""
         if hasattr(result, 'files') and result.files:
-            files_list = '\n'.join(f"• {filename}" for filename in result.files[:10])
+            files_list = '\n'.join(f"• {filename}" for filename in result.files[:20])  # Show more files
             directory = str(result.directory).replace('{', '').replace('}', '')
-            total_text = f"\n(Showing {min(10, len(result.files))} of {result.total_count} files)" if result.total_count > 10 else ""
-            return f"\n\n📁 **Files in {directory}:**\n{files_list}{total_text}\n\n"
+            
+            # Show more descriptive directory names
+            if directory == "knowledge_base":
+                directory_display = "knowledge_base/ (Knowledge Base)"
+            elif directory == "output":
+                directory_display = "output/ (Output Directory)"
+            else:
+                directory_display = directory
+                
+            total_text = f"\n\n(Showing {min(20, len(result.files))} of {result.total_count} files)" if result.total_count > 20 else f"\n\n(Total: {result.total_count} files)"
+            return f"\n\n📁 **Files in '{directory_display}':**\n{files_list}{total_text}\n\n"
         else:
             directory = str(result.directory).replace('{', '').replace('}', '')
-            return f"\n\n📁 **No files found in {directory}**\n\n"
+            if directory == "knowledge_base":
+                directory_display = "knowledge_base/ (Knowledge Base)"
+            elif directory == "output":
+                directory_display = "output/ (Output Directory)"
+            else:
+                directory_display = directory
+            return f"\n\n📁 **No files found in '{directory_display}'**\n\n"
 
     async def run(self, user_prompt: str) -> AsyncGenerator[Dict[str, Any], None]:
         """
@@ -329,15 +458,18 @@ class ReActAgentExecutor:
                 yield step
                 if step.get("type") == "final_answer":
                     final_answer_found = True
+                    logger.info("Final answer found - stopping agent execution")
                     break
             
             # Only break if we found a final answer
             if final_answer_found:
+                logger.info("Breaking out of main loop - agent completed")
                 break
                 
             # Continue to next step if we completed an action/observation cycle
             
         else:
+            logger.info("Maximum steps reached - providing fallback final answer")
             yield {"type": "final_answer", "content": "I've reached my maximum number of reasoning steps. Let me provide you with what I've found so far."}
 
 

@@ -54,11 +54,39 @@ async def run_assistant_streaming(request: AssistantRequest) -> AsyncGenerator[D
         logger.info("Routing to ReAct Agent")
         react_request = ReActAgentRequest(user_prompt=user_prompt)
         async for step in run_react_agent_streaming(react_request, tools=active_tools):
-            if step.get("type") in ["thought_chunk", "action_start", "observation", "error"]:
-                # Stream content immediately to the frontend
-                yield {"type": "content", "content": step["content"]}
+            if step.get("type") == "thought_start":
+                # Signal start of thinking
+                yield {"type": "content", "content": "Thought: "}
+            elif step.get("type") == "thought_chunk":
+                # Stream thought content in real-time
+                yield {"type": "content", "content": step['content']}
+            elif step.get("type") == "thought_complete":
+                # Add spacing after thought completion
+                yield {"type": "content", "content": "\n\n"}
+            elif step.get("type") == "action_start":
+                # Format as action for frontend parsing, but filter out any JSON content
+                action_content = step['content']
+                # Only yield if this doesn't look like JSON content
+                if not ('"tool_name"' in action_content or '"tool_input"' in action_content or 
+                       '```json' in action_content or action_content.strip().startswith('{')):
+                    yield {"type": "content", "content": f"Action: {action_content}\n\n"}
+            elif step.get("type") == "action_progress":
+                # Stream progress updates directly WITHOUT "Action:" prefix (these will be appended to action content)
+                yield {"type": "content", "content": step['content']}
+            elif step.get("type") == "observation_start":
+                # Signal start of observation analysis
+                yield {"type": "content", "content": "Observation: "}
+            elif step.get("type") == "observation_chunk":
+                # Stream observation content in real-time
+                yield {"type": "content", "content": step['content']}
+            elif step.get("type") == "observation_complete":
+                # Add spacing after observation completion
+                yield {"type": "content", "content": "\n\n"}
+            elif step.get("type") == "error":
+                # Format as error
+                yield {"type": "content", "content": f"Error: {step['content']}\n\n"}
             elif step.get("type") == "final_answer":
-                yield {"type": "content", "content": step["content"]}
+                yield {"type": "content", "content": f"\n\n**Here's what I found:**\n\n{step['content']}"}
     else:
         logger.info("Routing to Standard Agent")
         agent_request = AgentRequest(user_prompt=user_prompt)

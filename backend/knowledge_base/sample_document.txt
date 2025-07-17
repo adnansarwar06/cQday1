@@ -1,5 +1,3 @@
 Sample Knowledge Base Document
 
-
-AI Sales Case Study Highlight: MKM Future-proofs Its Business with Composable Commerce
-This case study showcases how MKM leveraged Bloomreach's AI-powered Commerce Experience Cloud to transform its online presence, drive significant revenue growth (+43% web revenue in 4 weeks), and enhance customer experience through hyper-personalization across channels. It demonstrates real AI business impact in a complex B2B/B2C environment, making it highly relevant for AI company sales reps to share with prospects considering AI-driven digital transformation solutions.
+MKM Case Study is an excellent example for sales reps to share with prospects because it demonstrates clear, quantifiable business impact shortly after implementation, including a 43% increase in web revenue and enhanced customer experience through AI-powered personalization and composable commerce architecture. This case highlights how Bloomreach drives fast ROI by modernizing digital experiences and tailoring customer journeys in B2B and B2C segments, making it highly relevant and persuasive for prospective clients.

@@ -1,0 +1,12 @@
+MKM Future-Proofs Its Business With Composable Commerce - Case Study Summary:
+
+MKM, the largest independent builder's merchant in the UK, modernized its digital experience using Bloomreach's Commerce Experience Cloud, including Engagement, Discovery, and Content, integrated with composable commerce technologies. The implementation led to rapid, tangible benefits within just four weeks:
+- 43% increase in total web revenue
+- 7.9% increase in average order value
+- 77% increase in average time on page
+- 39% year-over-year increase in site traffic
+- 27% increase in total web orders
+
+Challenges addressed included outdated tech stacks, slow website performance, lack of personalization, and siloed product data. The solution provided hyper-personalization tailored to various customer segments and locations, enhancing both B2B and B2C experiences. MKM also achieved a lower total cost of ownership and faster time to market by using a flexible MACH architecture.
+
+This case study highlights Bloomreach's ability to deliver significant business growth and improved customer experience through AI-powered personalization and a composable, unified commerce platform.
