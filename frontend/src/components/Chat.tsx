@@ -10,6 +10,10 @@ import { config, isDemoMode, getApiUrl } from "@/lib/config";
  * This component sets up the connection to the backend API.
  */
 function ChatProvider() {
+  const runtime = useChatRuntime({
+    api: getApiUrl(config.api.endpoints.chat),
+  });
+
   if (isDemoMode()) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -19,10 +23,6 @@ function ChatProvider() {
       </div>
     );
   }
-
-  const runtime = useChatRuntime({
-    api: getApiUrl(config.api.endpoints.chat),
-  });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>

@@ -15,11 +15,15 @@ load_dotenv()
 
 # Get the API key and model name from environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL_NAME = os.getenv("OPENAI_MODEL_NAME", "gpt-4.1-mini") # Default to gpt-4.1-mini
+OPENAI_MODEL_NAME = os.getenv(
+    "OPENAI_MODEL_NAME", "gpt-4.1-mini"
+)  # Default to gpt-4.1-mini
 
 # Raise an error if the API key is not set
 if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY is not set in the environment. Please add it to your .env file.")
+    raise ValueError(
+        "OPENAI_API_KEY is not set in the environment. Please add it to your .env file."
+    )
 
 # Create the async OpenAI client
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -27,10 +31,13 @@ client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 class LLMProviderError(Exception):
     """Custom exception for errors related to the LLM provider."""
+
     pass
 
 
-async def get_openai_completion(messages: List[Dict[str, Any]]) -> AsyncGenerator[str, None]:
+async def get_openai_completion(
+    messages: List[Dict[str, Any]],
+) -> AsyncGenerator[str, None]:
     """
     Gets a streaming chat completion from the OpenAI API.
 
@@ -55,4 +62,4 @@ async def get_openai_completion(messages: List[Dict[str, Any]]) -> AsyncGenerato
             if content:
                 yield content
     except Exception as e:
-        raise LLMProviderError(f"OpenAI API request failed: {e}") 
+        raise LLMProviderError(f"OpenAI API request failed: {e}")

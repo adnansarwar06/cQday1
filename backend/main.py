@@ -49,8 +49,10 @@ async def assistant_endpoint(request: AssistantRequest):
     agent (Simple or ReAct) based on the request's `mode` and `enabled_tools`.
     This endpoint is compliant with the Vercel AI SDK streaming protocol.
     """
-    logger.info(f"Backend - Received request with mode: {request.mode}, tools: {request.enabled_tools}")
-    
+    logger.info(
+        f"Backend - Received request with mode: {request.mode}, tools: {request.enabled_tools}"
+    )
+
     async def event_generator():
         try:
             # Stream responses using Vercel AI SDK data stream protocol
@@ -58,27 +60,27 @@ async def assistant_endpoint(request: AssistantRequest):
                 if chunk["type"] == "content":
                     # Text part format: 0:string\n
                     yield f"0:{json.dumps(chunk['content'])}\n"
-            
+
             # Finish message part format: d:{finishReason, usage}\n
             yield f'd:{json.dumps({"finishReason": "stop", "usage": {"promptTokens": 0, "completionTokens": 0}})}\n'
-            
+
         except Exception as e:
             logger.error(f"Error in assistant endpoint: {e}", exc_info=True)
             # Error part format: 3:string\n
             yield f"3:{json.dumps(str(e))}\n"
 
     return StreamingResponse(
-        event_generator(), 
+        event_generator(),
         media_type="text/plain",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "Access-Control-Allow-Origin": "*",
             "x-vercel-ai-data-stream": "v1",
-        }
+        },
     )
 
 
 @app.get("/")
 def read_root():
-    return {"Hello": "World"} 
+    return {"Hello": "World"}

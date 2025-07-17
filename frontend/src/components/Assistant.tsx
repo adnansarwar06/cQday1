@@ -5,6 +5,7 @@ import { AssistantRuntimeProvider, useMessage } from "@assistant-ui/react";
 import { Thread, AssistantMessage as BaseAssistantMessage, UserMessage as BaseUserMessage } from "@assistant-ui/react-ui";
 import { useChatRuntime } from "@assistant-ui/react-ai-sdk";
 import AgentTrace from "./AgentTrace";
+import MarkdownRenderer from "./MarkdownRenderer";
 import { config, isDemoMode, getApiUrl } from "@/lib/config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,8 +19,72 @@ import {
   RotateCcw,
   Sparkles,
   Send,
-  Settings
+  Settings,
+  CheckCircle
 } from "lucide-react";
+
+// Format final answer content for better readability
+const formatFinalAnswer = (content: string): string => {
+  if (!content) return '';
+  
+  let formatted = content;
+  
+  // Clean up multiple spaces
+  formatted = formatted.replace(/\s+/g, ' ').trim();
+  
+  // Split by existing double newlines to preserve intentional breaks
+  const existingParagraphs = formatted.split(/\n\s*\n/);
+  
+  const processedParagraphs = existingParagraphs.map(paragraph => {
+    let p = paragraph.trim();
+    if (!p) return '';
+    
+    // Break before major sections and conclusions
+    p = p.replace(/(\w\.)\s+(In summary|To summarize|In conclusion|Overall|Key takeaways|The main points|Important note|Additionally|Furthermore|Moreover|However|Therefore|As a result)/gi, '$1\n\n$2');
+    
+    // Break before recommendations and next steps
+    p = p.replace(/(\w\.)\s+(I recommend|My recommendation|Next steps|You should|Consider|To get started|For best results|Keep in mind)/gi, '$1\n\n$2');
+    
+    // Break before lists and examples
+    p = p.replace(/(\w\.)\s+(Here are|Here's a list|For example|Examples include|Some options|The following|These include)/gi, '$1\n\n$2');
+    
+    // Break before numbered or lettered points - improved detection
+    p = p.replace(/(\w\.)\s+([1-9]\.|[a-z]\)|[A-Z]\.)\s+/g, '$1\n\n$2 ');
+    
+    // Break before bullet points
+    p = p.replace(/(\w\.)\s+([-•*])\s+/g, '$1\n\n$2 ');
+    
+    // Handle specific patterns safely to avoid infinite loops
+    p = p.replace(/(findings:)\s+(\d+\.\s+Files)/gi, '$1\n\n$2');
+    p = p.replace(/(results:)\s+(\d+\.\s+[A-Z])/gi, '$1\n\n$2');
+    
+    // Break after questions when followed by answers
+    p = p.replace(/(\?)\s+([A-Z][^?]*)/g, '$1\n\n$2');
+    
+    // Add more paragraph breaks for longer content
+    // Break after longer sentences (more than 100 characters) when followed by new concepts
+    p = p.replace(/([^.]{100,}\.)\s+([A-Z][^.]*)/g, '$1\n\n$2');
+    
+    // Break before explanation connectors
+    p = p.replace(/(\w+)\s+(This means|This indicates|This suggests|For instance|For example|Specifically|In other words|That is|Namely)/gi, '$1\n\n$2');
+    
+    // Break before benefit/feature explanations
+    p = p.replace(/(\w\.)\s+(Benefits include|Features include|This includes|Key benefits|Main features|Primary advantages)/gi, '$1\n\n$2');
+    
+    // Break before comparison or contrast
+    p = p.replace(/(\w\.)\s+(On the other hand|In contrast|Alternatively|Meanwhile|Compared to|Unlike)/gi, '$1\n\n$2');
+    
+    // Clean up multiple newlines
+    p = p.replace(/\n{3,}/g, '\n\n');
+    
+    return p.trim();
+  });
+  
+  return processedParagraphs
+    .filter(p => p.length > 0)
+    .join('\n\n')
+    .trim();
+};
 
 // Demo Mode Component (works without API)
 const DemoMode = ({ 
@@ -92,7 +157,7 @@ const DemoMode = ({
                  How can I help you today?
                </h1>
                <p className="text-xl text-gray-600 dark:text-gray-400 max-w-lg mx-auto text-center leading-relaxed">
-                 I'm your AI assistant powered by advanced reasoning. Ask me anything or choose from the suggestions below.
+                 I&apos;m your AI assistant powered by advanced reasoning. Ask me anything or choose from the suggestions below.
                </p>
              </div>
 
@@ -348,7 +413,7 @@ const CustomAssistantMessage = () => {
           content: line.replace('Observation:', '').trim() 
         };
       } else if (line.startsWith('**Here\'s what I found:**') || 
-                 line.startsWith('Here\'s what I found:') ||
+                 line.startsWith('Here&apos;s what I found:') ||
                  line.startsWith('Based on')) {
         // This might be the start of the final answer
         if (currentStep) {
@@ -548,7 +613,7 @@ const CustomAssistantMessage = () => {
       setStreamingFinalAnswer(finalAnswer);
       lastContentLength.current = messageContent.length;
     }
-  }, [messageContent]);
+  }, [messageContent, streamingSteps]);
   
   // Use streaming steps if available, otherwise fall back to static parsing
   const { agentSteps, finalAnswer } = streamingSteps.length > 0 || streamingFinalAnswer 
@@ -570,19 +635,22 @@ const CustomAssistantMessage = () => {
           
           {/* Final Answer Content */}
           {finalAnswer && (
-            <div className="prose prose-slate dark:prose-invert max-w-none">
-              <div className="text-gray-900 dark:text-gray-100 whitespace-pre-wrap leading-relaxed text-sm">
-                {finalAnswer}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg p-6 border border-blue-200 dark:border-blue-800 max-h-96 overflow-y-auto">
+              <div className="flex items-center gap-2 mb-4">
+                <CheckCircle className="w-5 h-5 text-green-500" />
+                <h4 className="font-semibold text-lg text-gray-900 dark:text-gray-100">Final Answer</h4>
               </div>
+              <MarkdownRenderer content={formatFinalAnswer(finalAnswer)} className="text-gray-900 dark:text-gray-100" />
             </div>
           )}
           
           {/* Fallback: Show original content if no agent steps detected */}
           {!hasAgentSteps && !finalAnswer && (
-            <div className="prose prose-slate dark:prose-invert max-w-none">
-              <div className="text-gray-900 dark:text-gray-100 whitespace-pre-wrap leading-relaxed text-sm">
-                {messageContent || 'Assistant response'}
-              </div>
+            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700 max-h-96 overflow-y-auto">
+              <MarkdownRenderer 
+                content={formatFinalAnswer(messageContent || 'Assistant response')} 
+                className="text-gray-900 dark:text-gray-100" 
+              />
             </div>
           )}
 
@@ -631,7 +699,7 @@ const WelcomeScreen = () => {
           How can I help you today?
         </h1>
         <p className="text-xl text-gray-600 dark:text-gray-400 max-w-lg mx-auto text-center leading-relaxed">
-          I'm your AI assistant powered by advanced reasoning. Ask me anything or choose from the suggestions below.
+          I&apos;m your AI assistant powered by advanced reasoning. Ask me anything or choose from the suggestions below.
         </p>
       </div>
 
@@ -664,6 +732,20 @@ function AssistantContent() {
   const [showDemo, setShowDemo] = useState(false);
   const [agentMode, setAgentMode] = useState(false);
   const [selectedTools, setSelectedTools] = useState<string[]>(["web_search"]);
+
+  const runtime = useChatRuntime({
+    api: getApiUrl(config.api.endpoints.chat),
+    body: {
+      mode: agentMode ? "agent" : "standard",
+      enabled_tools: agentMode ? selectedTools : []
+    },
+    onResponse: (response) => {
+      console.log('API Response:', response);
+    },
+    onError: (error) => {
+      console.log('API Error:', error);
+    }
+  });
 
   if (isDemoMode() || showDemo) {
     return (
@@ -719,20 +801,6 @@ function AssistantContent() {
     );
   }
 
-  const runtime = useChatRuntime({
-    api: getApiUrl(config.api.endpoints.chat),
-    body: {
-      mode: agentMode ? "agent" : "standard",
-      enabled_tools: agentMode ? selectedTools : []
-    },
-    onResponse: (response) => {
-      console.log('API Response:', response);
-    },
-    onError: (error) => {
-      console.log('API Error:', error);
-    }
-  });
-  
   console.log('Runtime config:', {
     mode: agentMode ? "agent" : "standard",
     enabled_tools: agentMode ? selectedTools : [],

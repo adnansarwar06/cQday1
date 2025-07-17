@@ -1,6 +1,7 @@
 import React from "react";
-import { Brain, Zap, Eye, AlertTriangle, Code, Search, FileText, Globe } from "lucide-react";
+import { Brain, Zap, Eye, AlertTriangle, Code, Search, FileText, Globe, CheckCircle, Clock, Loader } from "lucide-react";
 import CollapsibleStep from "./CollapsibleStep";
+import MarkdownRenderer from "./MarkdownRenderer";
 
 interface TraceStep {
   step_type: "Thought" | "Action" | "Observation" | "Error";
@@ -13,6 +14,107 @@ interface AgentTraceProps {
   trace: any[];
   hasFinalAnswer?: boolean;
 }
+
+// Error boundary component for individual steps
+const StepErrorBoundary: React.FC<{ children: React.ReactNode; stepType: string; stepIndex: number }> = ({ 
+  children, 
+  stepType, 
+  stepIndex 
+}) => {
+  const [hasError, setHasError] = React.useState(false);
+  const [error, setError] = React.useState<Error | null>(null);
+
+  React.useEffect(() => {
+    const errorHandler = (event: ErrorEvent) => {
+      console.error(`Error in ${stepType} step ${stepIndex}:`, event.error);
+      setHasError(true);
+      setError(event.error);
+    };
+
+    window.addEventListener('error', errorHandler);
+    return () => window.removeEventListener('error', errorHandler);
+  }, [stepType, stepIndex]);
+
+  if (hasError) {
+    return (
+      <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+        <div className="flex items-center gap-2 text-red-600 dark:text-red-400 mb-2">
+          <AlertTriangle className="w-4 h-4" />
+          <span className="font-medium">Step Rendering Error</span>
+        </div>
+        <p className="text-sm text-red-700 dark:text-red-300">
+          Failed to render {stepType} step. Error: {error?.message || 'Unknown error'}
+        </p>
+        <button 
+          onClick={() => {
+            setHasError(false);
+            setError(null);
+          }}
+          className="mt-2 text-xs bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 px-2 py-1 rounded hover:bg-red-200 dark:hover:bg-red-800"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  try {
+    return <>{children}</>;
+  } catch (error) {
+    console.error(`Render error in ${stepType} step ${stepIndex}:`, error);
+    setHasError(true);
+    setError(error as Error);
+    return null;
+  }
+};
+
+// Safe content renderer with multiple fallback levels
+const SafeContentRenderer: React.FC<{ 
+  content: string; 
+  formatter?: (content: string) => string;
+  className?: string;
+  fallbackMessage?: string;
+}> = ({ 
+  content, 
+  formatter,
+  className = "text-gray-800 dark:text-gray-200",
+  fallbackMessage = "Content unavailable"
+}) => {
+  try {
+    if (!content || content.trim().length === 0) {
+      return (
+        <div className={`text-gray-500 dark:text-gray-400 italic ${className}`}>
+          {fallbackMessage}
+        </div>
+      );
+    }
+
+    // Try formatted content with markdown first
+    if (formatter) {
+      try {
+        const formattedContent = formatter(content);
+        return <MarkdownRenderer content={formattedContent} className={className} />;
+      } catch (formatterError) {
+        console.warn('Formatter error, falling back to raw markdown:', formatterError);
+        // Fallback to raw markdown without formatting
+        return <MarkdownRenderer content={content} className={className} />;
+      }
+    }
+
+    // Default to markdown renderer
+    return <MarkdownRenderer content={content} className={className} />;
+  } catch (markdownError) {
+    console.warn('Markdown rendering error, falling back to plain text:', markdownError);
+    // Final fallback to plain text
+    return (
+      <div className={`prose prose-sm max-w-none ${className}`}>
+        <div className="whitespace-pre-wrap leading-relaxed">
+          {content}
+        </div>
+      </div>
+    );
+  }
+};
 
 const AgentTrace: React.FC<AgentTraceProps> = ({ trace, hasFinalAnswer = false }) => {
   if (!trace || trace.length === 0) {
@@ -48,6 +150,176 @@ const AgentTrace: React.FC<AgentTraceProps> = ({ trace, hasFinalAnswer = false }
       default:
         return <Code className="w-4 h-4" />;
     }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "completed":
+        return <CheckCircle className="w-3 h-3 text-green-500" />;
+      case "running":
+        return <Loader className="w-3 h-3 text-blue-500 animate-spin" />;
+      case "error":
+        return <AlertTriangle className="w-3 h-3 text-red-500" />;
+      default:
+        return <Clock className="w-3 h-3 text-gray-400" />;
+    }
+  };
+
+  const formatObservationContent = (content: string): string => {
+    if (!content) return '';
+    
+    let formatted = content;
+    
+    // Remove emojis and replace with better indicators
+    formatted = formatted.replace(/🔍|📍|🌐|📊|📈|💡|⚡|🚀|🎯|🔧|🛠️|📝|📚|📊|🔎|🔍/g, '');
+    formatted = formatted.replace(/✅/g, '✓');
+    formatted = formatted.replace(/🔄/g, '→');
+    formatted = formatted.replace(/📍/g, '•');
+    
+    // Clean up multiple spaces first
+    formatted = formatted.replace(/\s+/g, ' ').trim();
+    
+    // Handle "Here's what I found" patterns
+    formatted = formatted.replace(/(Here\'s what I found:|Found some great case studies!|Key findings:|Summary:|Results:)/gi, '$1\n\n');
+    
+    // Handle numbered items better - both standalone numbers and list items
+    // Put standalone numbers like "2." and "3." on new lines
+    formatted = formatted.replace(/(revenues\.)\s+([23]\.)/g, '$1\n\n$2');
+    formatted = formatted.replace(/(source\.)\s+([23]\.)/g, '$1\n\n$2');
+    formatted = formatted.replace(/(visitor\.)\s+([23]\.)/g, '$1\n\n$2');
+    
+    // Handle specific numbered list patterns safely
+    formatted = formatted.replace(/(findings:)\s+(\d+\.\s+Files)/gi, '$1\n\n$2');
+    formatted = formatted.replace(/(performed)\s+(\d+\.\s+Files)/gi, '$1\n\n$2');
+    
+    // Handle URLs - separate them from preceding and following text
+    formatted = formatted.replace(/([A-Za-z])\s+(https?:\/\/[^\s]+)/g, '$1\n\n$2');
+    
+    // Break after sentences that end with period when followed by capital letters
+    // But not if it's already been formatted
+    if (!formatted.includes('\n\n\n')) {
+      formatted = formatted.replace(/(\w\.)\s+([A-Z][a-z])/g, '$1\n\n$2');
+    }
+    
+    // Clean up multiple newlines
+    formatted = formatted.replace(/\n{3,}/g, '\n\n');
+    
+    // Split into paragraphs and clean up
+    const paragraphs = formatted.split(/\n\n+/);
+    const cleanParagraphs = paragraphs
+      .map(p => p.trim())
+      .filter(p => p.length > 0);
+    
+    return cleanParagraphs.join('\n\n');
+  };
+
+  const formatProgressContent = (content: string): string => {
+    if (!content) return '';
+    
+    let formatted = content;
+    
+    // Remove emojis and replace with text indicators
+    formatted = formatted.replace(/🔍|📍|🌐|📊|📈|💡|⚡|🚀|🎯|🔧|🛠️|📝|📚|📊|🔎/g, '');
+    formatted = formatted.replace(/✅/g, '[DONE]');
+    formatted = formatted.replace(/🔄/g, '[PROCESSING]');
+    formatted = formatted.replace(/📍/g, '[INFO]');
+    
+    // Split into lines and process each
+    const lines = formatted.split('\n');
+    const processedLines = lines.map(line => {
+      let l = line.trim();
+      if (!l) return '';
+      
+      // Handle status indicators
+      l = l.replace(/\[DONE\]/g, '✓');
+      l = l.replace(/\[PROCESSING\]/g, '→');
+      l = l.replace(/\[INFO\]/g, '•');
+      
+      // Handle step indicators like "Step 1/5:" - ensure they start new lines
+      l = l.replace(/(.+?)\s+(Step \d+\/\d+:)/g, '$1\n\n**$2**');
+      
+      // Handle numbered items like [1/5], [2/5], etc. - ensure they start new lines
+      l = l.replace(/(.+?)\[(\d+)\/(\d+)\]:\s*(.+)/g, '$1\n\n**Step $2/$3:** $4');
+      
+      // Handle "Searching for:", "Found", "Processing", etc.
+      l = l.replace(/^(Searching for:|Found \d+|Processing and|Scraping)(.*)$/gi, '**$1**$2');
+      
+      // Handle bullet points
+      if (l.startsWith('•') || l.startsWith('-') || l.startsWith('*')) {
+        l = l.replace(/^[•\-\*]\s*/, '- ');
+      }
+      
+      return l;
+    });
+    
+    // Join lines and clean up formatting
+    let result = processedLines.filter(l => l.length > 0).join('\n');
+    
+    // Clean up multiple newlines but preserve paragraph structure
+    result = result.replace(/\n{3,}/g, '\n\n');
+    
+    // Ensure step indicators are properly formatted
+    result = result.replace(/([^\n])\n\n\*\*Step/g, '$1\n\n**Step');
+    
+    return result.trim();
+  };
+
+  const formatThoughtContent = (content: string): string => {
+    if (!content) return '';
+    
+    let formatted = content;
+    
+    // Remove emojis
+    formatted = formatted.replace(/🤔|💭|🧠|💡|⚡|🔍|📝|📊|🎯/g, '');
+    
+    // Clean up multiple spaces
+    formatted = formatted.replace(/\s+/g, ' ').trim();
+    
+    // Simple, safe paragraph breaks - only break after clear sentence endings
+    formatted = formatted.replace(/(\w\.)\s+(I need to|Let me|I should|However|Therefore|In conclusion)/gi, '$1\n\n$2');
+    formatted = formatted.replace(/(\w\.)\s+(The user|The task|The solution)/gi, '$1\n\n$2');
+    
+    // Add paragraph breaks for long sentences (character limit approach)
+    // Break after sentences that are longer than 200 characters
+    formatted = formatted.replace(/([^.]{200,}\.)\s+([A-Z])/g, '$1\n\n$2');
+    
+    // Clean up multiple newlines
+    formatted = formatted.replace(/\n{3,}/g, '\n\n');
+    
+    return formatted.trim();
+  };
+
+  const formatActionContent = (content: string): string => {
+    if (!content) return '';
+    
+    let formatted = content;
+    
+    // Remove emojis
+    formatted = formatted.replace(/🔧|🛠️|⚡|🚀|🎯|📝|🌐|🔍|📊/g, '');
+    
+    // Split by existing double newlines
+    const paragraphs = formatted.split(/\n\s*\n/);
+    
+    const processedParagraphs = paragraphs.map(paragraph => {
+      let p = paragraph.trim();
+      if (!p) return '';
+      
+      // Clean up multiple spaces
+      p = p.replace(/\s+/g, ' ');
+      
+      // Only break before action phrases if they start a new sentence
+      p = p.replace(/(\w\.)\s+((?:I will|I'll|Going to|Planning to|Performing|Executing)[^.]*)/gi, '$1\n\n$2');
+      
+      // Clean up multiple newlines
+      p = p.replace(/\n{3,}/g, '\n\n');
+      
+      return p.trim();
+    });
+    
+    return processedParagraphs
+      .filter(p => p.length > 0)
+      .join('\n\n')
+      .trim();
   };
 
   const getStepStatus = (step: any, index: number) => {
@@ -117,44 +389,54 @@ const AgentTrace: React.FC<AgentTraceProps> = ({ trace, hasFinalAnswer = false }
       case "thought":
         const thoughtTitle = status === "running" ? "Thinking..." : "Thought";
         return (
-          <CollapsibleStep 
-            key={index} 
-            title={thoughtTitle}
-            defaultOpen={isLastStep || status === "running"}
-            status={status}
-            icon={<Brain className="w-4 h-4" />}
-            stepNumber={stepNumber}
-          >
-            <div className="prose prose-sm max-w-none max-h-96 overflow-y-auto">
-              {step.content ? (
-                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{step.content}</p>
-              ) : status === "running" ? (
-                <div className="flex items-center gap-2 text-gray-500">
-                  <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-                  <span className="text-sm">Thinking...</span>
+          <StepErrorBoundary key={`thought-boundary-${index}`} stepType="thought" stepIndex={index}>
+            <CollapsibleStep 
+              key={index} 
+              title={
+                <div className="flex items-center gap-2">
+                  <span>{thoughtTitle}</span>
+                  {getStatusIcon(status)}
                 </div>
-              ) : (
-                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{step.content}</p>
-              )}
-            </div>
-          </CollapsibleStep>
+              }
+              defaultOpen={isLastStep || status === "running"}
+              status={status}
+              icon={<Brain className="w-4 h-4" />}
+              stepNumber={stepNumber}
+            >
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800 max-h-96 overflow-y-auto">
+                {status === "running" && (!step.content || step.content.trim().length === 0) ? (
+                  <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                    <Loader className="w-4 h-4 animate-spin" />
+                    <span className="text-sm font-medium">Processing thoughts...</span>
+                  </div>
+                ) : (
+                  <SafeContentRenderer 
+                    content={step.content || ''} 
+                    formatter={formatThoughtContent}
+                    className="text-gray-800 dark:text-gray-200"
+                    fallbackMessage="Thinking in progress..."
+                  />
+                )}
+              </div>
+            </CollapsibleStep>
+          </StepErrorBoundary>
         );
       case "action":
         // Try to extract tool name from content if not provided
         let detectedToolName = step.tool_name;
         if (!detectedToolName && step.content) {
           const content = step.content.toLowerCase();
-          if (content.includes('web') || content.includes('🌐')) {
+          if (content.includes('web') || content.includes('search the web')) {
             detectedToolName = 'web_search';
-          } else if (content.includes('case stud') || content.includes('🔍')) {
+          } else if (content.includes('case stud')) {
             detectedToolName = 'case_studies_search';
-          } else if (content.includes('create') && content.includes('file') || content.includes('📝')) {
+          } else if (content.includes('create') && content.includes('file')) {
             detectedToolName = 'create_file';
-          } else if (content.includes('edit') && content.includes('file') || content.includes('✏️')) {
+          } else if (content.includes('edit') && content.includes('file')) {
             detectedToolName = 'edit_file';
-          } else if (content.includes('read') && content.includes('file') || content.includes('📖')) {
+          } else if (content.includes('read') && content.includes('file')) {
             detectedToolName = 'read_file';
-          } else if (content.includes('list') && content.includes('file') || content.includes('📁')) {
+          } else if (content.includes('list') && content.includes('file')) {
             detectedToolName = 'list_files';
           }
         }
@@ -163,106 +445,150 @@ const AgentTrace: React.FC<AgentTraceProps> = ({ trace, hasFinalAnswer = false }
         const actionTitle = status === "running" ? `Using ${toolDisplayName}...` : `Used ${toolDisplayName}`;
         
         return (
-          <CollapsibleStep 
-            key={index} 
-            title={actionTitle}
-            defaultOpen={status === "running"}
-            status={status}
-            icon={getToolIcon(detectedToolName)}
-            stepNumber={stepNumber}
-          >
-            <div className="space-y-3">
-              <div className="flex items-center space-x-2 text-sm text-gray-600">
-                <Zap className="w-4 h-4" />
-                <span className="font-medium">Tool: {toolDisplayName}</span>
-              </div>
-              <div className="prose prose-sm max-w-none">
-                {step.content ? (
-                  <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{step.content}</p>
-                ) : status === "running" ? (
-                  <div className="flex items-center gap-2 text-gray-500">
-                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-                    <span className="text-sm">Preparing tool...</span>
+          <StepErrorBoundary key={`action-boundary-${index}`} stepType="action" stepIndex={index}>
+            <CollapsibleStep 
+              key={index} 
+              title={
+                <div className="flex items-center gap-2">
+                  <span>{actionTitle}</span>
+                  {getStatusIcon(status)}
+                </div>
+              }
+              defaultOpen={status === "running"}
+              status={status}
+              icon={getToolIcon(detectedToolName)}
+              stepNumber={stepNumber}
+            >
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                  <Zap className="w-4 h-4 text-orange-500" />
+                  <span className="font-medium">Tool: {toolDisplayName}</span>
+                </div>
+                
+                {step.content && (
+                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800 max-h-96 overflow-y-auto">
+                    <SafeContentRenderer 
+                      content={step.content} 
+                      formatter={formatActionContent}
+                      className="text-gray-800 dark:text-gray-200"
+                      fallbackMessage="Action in progress..."
+                    />
                   </div>
-                ) : (
-                  <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{step.content}</p>
+                )}
+                
+                {!step.content && status === "running" && (
+                  <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4">
+                    <Loader className="w-4 h-4 animate-spin" />
+                    <span className="text-sm font-medium">Preparing tool execution...</span>
+                  </div>
+                )}
+                
+                {step.progressContent && (
+                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800 max-h-64 overflow-y-auto">
+                    <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-2">
+                      <Loader className="w-3 h-3 animate-spin" />
+                      Live Progress
+                    </div>
+                    <SafeContentRenderer 
+                      content={step.progressContent} 
+                      formatter={formatProgressContent}
+                      className="text-sm text-gray-800 dark:text-gray-200 font-mono"
+                      fallbackMessage="Processing..."
+                    />
+                  </div>
+                )}
+                
+                {step.tool_input && (
+                  <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-2">
+                      <Code className="w-3 h-3" />
+                      Parameters
+                    </div>
+                    <pre className="text-sm text-gray-800 dark:text-gray-200 overflow-x-auto bg-white dark:bg-gray-900 p-2 rounded border">
+                      {typeof step.tool_input === 'string' ? step.tool_input : JSON.stringify(step.tool_input, null, 2)}
+                    </pre>
+                  </div>
                 )}
               </div>
-              {step.progressContent && (
-                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                  <div className="text-xs font-medium text-blue-600 mb-2 flex items-center gap-1">
-                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-                    Live Progress
-                  </div>
-                  <div className="text-sm text-gray-800 font-mono whitespace-pre-wrap">
-                    {step.progressContent}
-                  </div>
-                </div>
-              )}
-              {step.tool_input && (
-                <div className="bg-gray-50 rounded-lg p-3 border">
-                  <div className="text-xs font-medium text-gray-500 mb-2">Parameters:</div>
-                  <pre className="text-sm text-gray-800 overflow-x-auto">
-                    {typeof step.tool_input === 'string' ? step.tool_input : JSON.stringify(step.tool_input, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </div>
-          </CollapsibleStep>
+            </CollapsibleStep>
+          </StepErrorBoundary>
         );
       case "observation":
-        const observationTitle = status === "running" ? "Analyzing results..." : "Observation";
+        const observationTitle = status === "running" ? "Analyzing results..." : "Results";
         return (
-          <CollapsibleStep 
-            key={index} 
-            title={observationTitle}
-            defaultOpen={isLastStep || status === "running"}
-            status={status}
-            icon={<Eye className="w-4 h-4" />}
-            stepNumber={stepNumber}
-          >
-            <div className="space-y-3">
-              <div className="flex items-center space-x-2 text-sm text-gray-600">
-                <Eye className="w-4 h-4" />
-                <span className="font-medium">Tool Response</span>
-              </div>
-              <div className="bg-blue-50 rounded-lg p-3 border border-blue-200 max-h-96 overflow-y-auto">
-                <div className="prose prose-sm max-w-none">
-                  {step.content ? (
-                    <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{step.content}</p>
-                  ) : status === "running" ? (
-                    <div className="flex items-center gap-2 text-gray-500">
-                      <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-                      <span className="text-sm">Analyzing tool results...</span>
-                    </div>
-                  ) : (
-                    <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{step.content}</p>
-                  )}
+          <StepErrorBoundary key={`observation-boundary-${index}`} stepType="observation" stepIndex={index}>
+            <CollapsibleStep 
+              key={index} 
+              title={
+                <div className="flex items-center gap-2">
+                  <span>{observationTitle}</span>
+                  {getStatusIcon(status)}
+                </div>
+              }
+              defaultOpen={isLastStep || status === "running"}
+              status={status}
+              icon={<Eye className="w-4 h-4" />}
+              stepNumber={stepNumber}
+            >
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                  <Eye className="w-4 h-4 text-green-500" />
+                  <span className="font-medium">Tool Response</span>
+                </div>
+                
+                <div className="bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800 overflow-hidden">
+                  <div className="p-4 max-h-96 overflow-y-auto">
+                    {status === "running" && (!step.content || step.content.trim().length === 0) ? (
+                      <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                        <Loader className="w-4 h-4 animate-spin" />
+                        <span className="text-sm font-medium">Processing tool results...</span>
+                      </div>
+                    ) : (
+                      <SafeContentRenderer 
+                        content={step.content || ''} 
+                        formatter={formatObservationContent}
+                        className="text-gray-800 dark:text-gray-200"
+                        fallbackMessage="Results pending..."
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </CollapsibleStep>
+            </CollapsibleStep>
+          </StepErrorBoundary>
         );
       case "error":
         return (
-          <CollapsibleStep 
-            key={index} 
-            title="Error Occurred"
-            defaultOpen={false}
-            status="error"
-            icon={<AlertTriangle className="w-4 h-4" />}
-            stepNumber={stepNumber}
-          >
-            <div className="space-y-3">
-              <div className="flex items-center space-x-2 text-sm text-red-600">
-                <AlertTriangle className="w-4 h-4" />
-                <span className="font-medium">Error Details</span>
+          <StepErrorBoundary key={`error-boundary-${index}`} stepType="error" stepIndex={index}>
+            <CollapsibleStep 
+              key={index} 
+              title={
+                <div className="flex items-center gap-2">
+                  <span>Error Occurred</span>
+                  {getStatusIcon("error")}
+                </div>
+              }
+              defaultOpen={false}
+              status="error"
+              icon={<AlertTriangle className="w-4 h-4" />}
+              stepNumber={stepNumber}
+            >
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span className="font-medium">Error Details</span>
+                </div>
+                
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 max-h-96 overflow-y-auto">
+                  <SafeContentRenderer 
+                    content={step.content || 'An error occurred'} 
+                    className="text-red-800 dark:text-red-200"
+                    fallbackMessage="Error details unavailable"
+                  />
+                </div>
               </div>
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="text-red-800 text-sm">{step.content}</p>
-              </div>
-            </div>
-          </CollapsibleStep>
+            </CollapsibleStep>
+          </StepErrorBoundary>
         );
       default:
         return null;
@@ -270,20 +596,20 @@ const AgentTrace: React.FC<AgentTraceProps> = ({ trace, hasFinalAnswer = false }
   };
 
   return (
-    <div className="mt-6 bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+    <div className="mt-6 bg-gradient-to-br from-gray-50 to-white dark:from-gray-800 dark:to-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="bg-white border-b border-gray-100 px-6 py-4">
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 px-6 py-4">
         <div className="flex items-center space-x-3">
-          <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
-            <Brain className="w-4 h-4 text-blue-600" />
+          <div className="flex items-center justify-center w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded-lg">
+            <Brain className="w-4 h-4 text-blue-600 dark:text-blue-400" />
           </div>
           <div>
-            <h3 className="font-semibold text-lg text-gray-900">Agent Reasoning</h3>
-            <p className="text-sm text-gray-500">Step-by-step thought process</p>
+            <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">Agent Reasoning</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Step-by-step thought process</p>
           </div>
           <div className="flex-1"></div>
           <div className="flex items-center space-x-2">
-            <div className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+            <div className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">
               {aggregatedTrace.length} steps
             </div>
           </div>
