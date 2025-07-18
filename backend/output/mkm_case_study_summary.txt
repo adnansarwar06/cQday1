@@ -1,12 +1,26 @@
-MKM Future-Proofs Its Business With Composable Commerce - Case Study Summary:
+MKM Case Study Summary
 
-MKM, the largest independent builder's merchant in the UK, modernized its digital experience using Bloomreach's Commerce Experience Cloud, including Engagement, Discovery, and Content, integrated with composable commerce technologies. The implementation led to rapid, tangible benefits within just four weeks:
+Company Background:
+MKM is the largest independent builder’s merchant in the United Kingdom with over 100 branches, serving B2B, B2C, and B2B2C customers. The company faced an aging customer base and a fragmented digital experience that needed modernization.
+
+Challenges:
+- Slow online platform with poor user experience
+- Lack of cohesiveness in customer data and personalization
+- Need to attract and engage new, younger customers
+- End of life for existing tech stack
+
+Solution:
+- Implemented Bloomreach Commerce Experience Cloud (Engagement, Discovery, Content)
+- Integrated with Vue Storefront and BigCommerce for a composable commerce architecture
+- Delivered hyper-personalization, localized experiences, and improved site performance
+
+Key Results (4 weeks post-launch):
 - 43% increase in total web revenue
 - 7.9% increase in average order value
 - 77% increase in average time on page
-- 39% year-over-year increase in site traffic
 - 27% increase in total web orders
+- 39% YoY increase in site traffic
+- 75% improvement in average page load speed
 
-Challenges addressed included outdated tech stacks, slow website performance, lack of personalization, and siloed product data. The solution provided hyper-personalization tailored to various customer segments and locations, enhancing both B2B and B2C experiences. MKM also achieved a lower total cost of ownership and faster time to market by using a flexible MACH architecture.
-
-This case study highlights Bloomreach's ability to deliver significant business growth and improved customer experience through AI-powered personalization and a composable, unified commerce platform.
+Why This Case is a Strong Fit for Prospects:
+This case exemplifies how Bloomreach’s unified AI-powered platform can rapidly transform and modernize ecommerce operations, delivering measurable business growth with a focus on personalization, speed, and customer experience. It is ideal for prospects looking to achieve significant ROI and modernize their digital commerce strategies efficiently.

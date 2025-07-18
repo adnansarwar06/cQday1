@@ -1,3 +1,9 @@
 Sample Knowledge Base Document
 
-MKM Case Study is an excellent example for sales reps to share with prospects because it demonstrates clear, quantifiable business impact shortly after implementation, including a 43% increase in web revenue and enhanced customer experience through AI-powered personalization and composable commerce architecture. This case highlights how Bloomreach drives fast ROI by modernizing digital experiences and tailoring customer journeys in B2B and B2C segments, making it highly relevant and persuasive for prospective clients.
+Birds are warm-blooded vertebrates characterized by feathers, beaked jaws, and a high metabolic rate. They lay hard-shelled eggs and have a strong yet lightweight skeleton that enables flight. Birds play essential roles in ecosystems, including pollination, seed dispersal, and pest control.
+Birds are warm-blooded vertebrates characterized by feathers, beaked jaws, and a high metabolic rate. They lay hard-shelled eggs and have a strong yet lightweight skeleton that enables flight. Birds play essential roles in ecosystems, including pollination, seed dispersal, and pest control.
+Birds are warm-blooded vertebrates characterized by feathers, beaked jaws, and a high metabolic rate. They lay hard-shelled eggs and have a skeleton that is strong yet lightweight, enabling many species to fly. Birds play essential roles in ecosystems, including pollination, seed dispersal, and pest control.
+Birds are warm-blooded vertebrates characterized by feathers, beaked jaws, and a high metabolic rate. They lay hard-shelled eggs and have a skeleton that is strong yet lightweight, enabling many species to fly. Birds play essential roles in ecosystems, including pollination, seed dispersal, and pest control.
+
+MKM Case Study Summary:
+The MKM implementation showcases a rapid, measurable uplift in revenue, average order value, and customer engagement, all driven by Bloomreach’s AI-powered composable commerce platform. It is a compelling example highlighting how prospects can achieve fast, effective digital transformation and improved ecommerce performance.

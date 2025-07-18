@@ -105,16 +105,12 @@ export default function ChatControls({
   };
 
   return (
-    <div className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="fixed top-0 inset-x-0 z-40 border-b border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md p-4 h-20 flex items-center shadow-lg">
+      <div className="w-full px-6">
         <div className="flex items-center justify-between gap-4">
           {/* Agent Mode Toggle */}
           <div className="flex items-center gap-3">
-            <div className="flex items-center space-x-2">
-              <MessageSquare className="w-4 h-4 text-gray-500" />
-              <Label htmlFor="agent-mode" className="text-sm font-medium">
-                Standard Chat
-              </Label>
+            <div className="flex items-center space-x-4">
               <Switch
                 id="agent-mode"
                 checked={agentMode}
@@ -130,7 +126,7 @@ export default function ChatControls({
           </div>
 
           {/* Tool Selection */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 ml-8">
             <div className="relative">
               <Button
                 variant="outline"

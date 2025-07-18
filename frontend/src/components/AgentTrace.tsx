@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Component, ErrorInfo } from "react";
 import { Brain, Zap, Eye, AlertTriangle, Code, Search, FileText, Globe, CheckCircle, Clock, Loader } from "lucide-react";
 import CollapsibleStep from "./CollapsibleStep";
 import MarkdownRenderer from "./MarkdownRenderer";
@@ -15,58 +15,49 @@ interface AgentTraceProps {
   hasFinalAnswer?: boolean;
 }
 
-// Error boundary component for individual steps
-const StepErrorBoundary: React.FC<{ children: React.ReactNode; stepType: string; stepIndex: number }> = ({ 
-  children, 
-  stepType, 
-  stepIndex 
-}) => {
-  const [hasError, setHasError] = React.useState(false);
-  const [error, setError] = React.useState<Error | null>(null);
+// Error boundary component for individual steps (class-based to avoid setState during render)
+class StepErrorBoundary extends Component<{ children: React.ReactNode; stepType: string; stepIndex: number }, { hasError: boolean; error: Error | null }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
 
-  React.useEffect(() => {
-    const errorHandler = (event: ErrorEvent) => {
-      console.error(`Error in ${stepType} step ${stepIndex}:`, event.error);
-      setHasError(true);
-      setError(event.error);
-    };
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
 
-    window.addEventListener('error', errorHandler);
-    return () => window.removeEventListener('error', errorHandler);
-  }, [stepType, stepIndex]);
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    const { stepType, stepIndex } = this.props;
+    console.error(`Error in ${stepType} step ${stepIndex}:`, error, errorInfo);
+  }
 
-  if (hasError) {
-    return (
-      <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-        <div className="flex items-center gap-2 text-red-600 dark:text-red-400 mb-2">
-          <AlertTriangle className="w-4 h-4" />
-          <span className="font-medium">Step Rendering Error</span>
+  render() {
+    const { hasError, error } = this.state;
+    const { children, stepType } = this.props;
+
+    if (hasError) {
+      return (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+          <div className="flex items-center gap-2 text-red-600 dark:text-red-400 mb-2">
+            <AlertTriangle className="w-4 h-4" />
+            <span className="font-medium">Step Rendering Error</span>
+          </div>
+          <p className="text-sm text-red-700 dark:text-red-300">
+            Failed to render {stepType} step. Error: {error?.message || 'Unknown error'}
+          </p>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="mt-2 text-xs bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 px-2 py-1 rounded hover:bg-red-200 dark:hover:bg-red-800"
+          >
+            Retry
+          </button>
         </div>
-        <p className="text-sm text-red-700 dark:text-red-300">
-          Failed to render {stepType} step. Error: {error?.message || 'Unknown error'}
-        </p>
-        <button 
-          onClick={() => {
-            setHasError(false);
-            setError(null);
-          }}
-          className="mt-2 text-xs bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 px-2 py-1 rounded hover:bg-red-200 dark:hover:bg-red-800"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
+      );
+    }
 
-  try {
-    return <>{children}</>;
-  } catch (error) {
-    console.error(`Render error in ${stepType} step ${stepIndex}:`, error);
-    setHasError(true);
-    setError(error as Error);
-    return null;
+    return this.props.children as React.ReactElement;
   }
-};
+}
 
 // Safe content renderer with multiple fallback levels
 const SafeContentRenderer: React.FC<{ 

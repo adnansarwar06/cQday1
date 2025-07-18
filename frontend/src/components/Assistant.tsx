@@ -190,19 +190,19 @@ const DemoMode = ({
                   // User Message
                   <div className="flex items-start gap-4 justify-end max-w-4xl mx-auto px-4 py-6 animate-fade-in">
                     <div className="flex flex-col items-end max-w-2xl">
-                      <div className="bg-blue-600 text-white rounded-2xl px-4 py-3 shadow-sm">
+                      <div className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white rounded-3xl px-6 py-3 shadow-lg hover:shadow-xl transition-all duration-300">
                         <p className="whitespace-pre-wrap text-sm leading-relaxed">
                           {message.content}
                         </p>
                       </div>
                     </div>
-                    <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-white flex-shrink-0">
+                    <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-lime-500 rounded-full flex items-center justify-center text-white flex-shrink-0">
                       <UserIcon className="w-4 h-4" />
                     </div>
                   </div>
                 ) : (
                   // Assistant Message
-                  <div className="bg-gray-50 dark:bg-gray-800/30 border-b border-gray-100 dark:border-gray-700/50 animate-fade-in">
+                  <div className="py-4 animate-fade-in">
                     <div className="flex items-start gap-4 max-w-4xl mx-auto px-4 py-6 group">
                       <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white flex-shrink-0">
                         <Bot className="w-4 h-4" />
@@ -280,11 +280,16 @@ const DemoMode = ({
 // Custom User Message Component
 const CustomUserMessage = () => {
   const message = useMessage();
+
+  // Notify global that at least one message exists
+  React.useEffect(() => {
+    window.dispatchEvent(new Event('aui-message-added'));
+  }, []);
   
   return (
     <div className="flex items-start gap-4 justify-end max-w-4xl mx-auto px-4 py-6 animate-fade-in">
       <div className="flex flex-col items-end max-w-2xl">
-        <div className="bg-blue-600 text-white rounded-2xl px-4 py-3 shadow-sm">
+        <div className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white rounded-3xl px-6 py-3 shadow-lg hover:shadow-xl transition-all duration-300">
           <p className="whitespace-pre-wrap text-sm leading-relaxed">
             {typeof message.content === 'string' ? message.content : 
              Array.isArray(message.content) ? message.content.map((part: any) => part.text || part).join('') :
@@ -292,7 +297,7 @@ const CustomUserMessage = () => {
           </p>
         </div>
       </div>
-      <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-white flex-shrink-0">
+      <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-lime-500 rounded-full flex items-center justify-center text-white flex-shrink-0">
         <UserIcon className="w-4 h-4" />
       </div>
     </div>
@@ -304,7 +309,42 @@ const CustomAssistantMessage = () => {
   const message = useMessage();
   const [streamingSteps, setStreamingSteps] = useState<any[]>([]);
   const [streamingFinalAnswer, setStreamingFinalAnswer] = useState('');
+  // Throttle state commits to avoid excessive nested updates
+  const pendingRef = useRef<{ steps: any[]; final: string } | null>(null);
+  const commitTimeoutRef = useRef<any>(null);
+
+  const commitPending = React.useCallback(() => {
+    if (!pendingRef.current) return;
+    const { steps, final } = pendingRef.current;
+    setStreamingSteps(steps);
+    setStreamingFinalAnswer(prev => (prev === final ? prev : final));
+    pendingRef.current = null;
+    commitTimeoutRef.current = null;
+  }, [setStreamingSteps]);
+
+  const scheduleCommit = React.useCallback(() => {
+    if (commitTimeoutRef.current) return; // Already scheduled
+    commitTimeoutRef.current = setTimeout(() => {
+      commitPending();
+    }, 100); // 100ms throttle
+  }, [commitPending]);
+  // Helper to update steps only when they actually changed (deep compare)
+  const safeSetStreamingSteps = React.useCallback((nextSteps: any[]) => {
+    setStreamingSteps(prev => {
+      // Quick reference check
+      if (prev === nextSteps) return prev;
+
+      // Simple length mismatch ➜ definitely different
+      if (prev.length !== nextSteps.length) return nextSteps;
+
+      // Deep equality check (shallow compare objects by JSON)
+      const prevStr = JSON.stringify(prev);
+      const nextStr = JSON.stringify(nextSteps);
+      return prevStr === nextStr ? prev : nextSteps;
+    });
+  }, []);
   const lastContentLength = useRef(0);
+  const lastSerializedRef = useRef<string>('');
   
   // Parse agent reasoning from message content
   const parseAgentReasoning = (content: string) => {
@@ -495,6 +535,15 @@ const CustomAssistantMessage = () => {
   useEffect(() => {
     if (messageContent.length > lastContentLength.current) {
       const { agentSteps, finalAnswer } = parseAgentReasoning(messageContent);
+
+      // Serialize current parse result to detect real change
+      const serialized = JSON.stringify({ agentSteps, finalAnswer });
+      if (serialized === lastSerializedRef.current) {
+        // Nothing actually changed; skip any state updates to avoid loops
+        lastContentLength.current = messageContent.length;
+        return;
+      }
+      lastSerializedRef.current = serialized;
       
       // Check if we have incomplete content that might be a new step starting
       const lines = messageContent.split('\n');
@@ -557,7 +606,8 @@ const CustomAssistantMessage = () => {
             content: '',
             isStreaming: true
           };
-          setStreamingSteps([...agentSteps, incompleteStep]);
+          pendingRef.current = { steps: [...agentSteps, incompleteStep], final: streamingFinalAnswer };
+          scheduleCommit();
         } else if (hasIncompleteAction) {
           const incompleteStep = {
             type: 'action',
@@ -566,14 +616,16 @@ const CustomAssistantMessage = () => {
             tool_name: '',
             progressContent: ''
           };
-          setStreamingSteps([...agentSteps, incompleteStep]);
+          pendingRef.current = { steps: [...agentSteps, incompleteStep], final: streamingFinalAnswer };
+          scheduleCommit();
         } else if (hasIncompleteObservation) {
           const incompleteStep = {
             type: 'observation',
             content: '',
             isStreaming: true
           };
-          setStreamingSteps([...agentSteps, incompleteStep]);
+          pendingRef.current = { steps: [...agentSteps, incompleteStep], final: streamingFinalAnswer };
+          scheduleCommit();
         } else {
           // Mark the last step as streaming if it looks incomplete, but preserve existing streaming state
           const updatedSteps = [...agentSteps];
@@ -607,13 +659,13 @@ const CustomAssistantMessage = () => {
               }
             }
           }
-          setStreamingSteps(updatedSteps);
+          pendingRef.current = { steps: updatedSteps, final: finalAnswer };
+          scheduleCommit();
         }
-      
-      setStreamingFinalAnswer(finalAnswer);
+      // final answer will be committed via pendingRef
       lastContentLength.current = messageContent.length;
     }
-  }, [messageContent, streamingSteps]);
+  }, [messageContent]);
   
   // Use streaming steps if available, otherwise fall back to static parsing
   const { agentSteps, finalAnswer } = streamingSteps.length > 0 || streamingFinalAnswer 
@@ -622,7 +674,7 @@ const CustomAssistantMessage = () => {
   const hasAgentSteps = agentSteps.length > 0;
 
   return (
-    <div className="bg-gray-50 dark:bg-gray-800/30 border-b border-gray-100 dark:border-gray-700/50 animate-fade-in">
+    <div className="py-4 animate-fade-in">
       <div className="flex items-start gap-4 max-w-4xl mx-auto px-4 py-6 group">
         <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white flex-shrink-0">
           <Bot className="w-4 h-4" />
@@ -635,7 +687,7 @@ const CustomAssistantMessage = () => {
           
           {/* Final Answer Content */}
           {finalAnswer && (
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg p-6 border border-blue-200 dark:border-blue-800 max-h-96 overflow-y-auto">
+            <div className="bg-white/80 dark:bg-gray-800/70 backdrop-blur-md border border-blue-200/60 dark:border-blue-800/60 rounded-3xl p-6 shadow-md max-h-96 overflow-y-auto">
               <div className="flex items-center gap-2 mb-4">
                 <CheckCircle className="w-5 h-5 text-green-500" />
                 <h4 className="font-semibold text-lg text-gray-900 dark:text-gray-100">Final Answer</h4>
@@ -679,6 +731,29 @@ const CustomAssistantMessage = () => {
 
 // Welcome Screen Component  
 const WelcomeScreen = () => {
+  // Hide welcome screen once any message nodes appear in the thread
+  const [visible, setVisible] = React.useState(true);
+
+  React.useEffect(() => {
+    const handle = () => setVisible(false);
+
+    // Hide immediately if event already triggered before mount (check flag)
+    if ((window as any).__auiHasMessage) {
+      setVisible(false);
+      return;
+    }
+
+    const listener = () => {
+      (window as any).__auiHasMessage = true;
+      handle();
+    };
+    window.addEventListener('aui-message-added', listener);
+
+    return () => window.removeEventListener('aui-message-added', listener);
+  }, [visible]);
+
+  if (!visible) return null;
+
   const suggestions = [
     "Help me build a React component",
     "Explain quantum computing", 

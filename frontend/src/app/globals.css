@@ -263,7 +263,7 @@ body {
   }
   
   [data-aui-thread-viewport] {
-    @apply flex-1 overflow-y-auto custom-scrollbar;
+    @apply flex-1 overflow-y-auto custom-scrollbar pb-32;
   }
 
   [data-aui-message] {
@@ -275,7 +275,7 @@ body {
   }
 
   [data-aui-user-message] [data-aui-message-content] {
-    @apply bg-blue-600 text-white rounded-2xl px-4 py-3 max-w-2xl shadow-sm;
+    @apply bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-3xl px-5 py-3 max-w-2xl shadow-md hover:shadow-lg transition-all duration-300;
   }
 
   [data-aui-assistant-message] {
@@ -287,11 +287,19 @@ body {
   }
 
   [data-aui-assistant-message] [data-aui-message-content] {
-    @apply text-gray-900 dark:text-gray-100 leading-relaxed prose dark:prose-invert max-w-none prose-slate;
+    @apply bg-white/80 dark:bg-gray-800/70 backdrop-blur-md border border-gray-200 dark:border-gray-700 rounded-3xl px-5 py-4 shadow-sm text-gray-900 dark:text-gray-100 leading-relaxed prose dark:prose-invert max-w-none prose-slate;
   }
 
   [data-aui-composer] {
-    @apply border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4;
+    @apply fixed bottom-0 inset-x-0 z-30 border-t border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-900/85 backdrop-blur-md p-4 shadow-2xl;
+  }
+
+  /* Ensure scroll area has space for fixed composer */
+  [data-aui-thread] {
+    @apply pt-24 pb-32;
+  }
+  [data-aui-thread-viewport] {
+    @apply flex-1 overflow-y-auto custom-scrollbar pb-32;
   }
 
   [data-aui-composer-input] {
@@ -408,6 +416,26 @@ body {
 
   [data-aui-composer] {
     animation: slideUp 0.3s ease-out;
+  }
+
+  /* Hide welcome screen once any message exists */
+  [data-aui-thread]:has([data-aui-message]) [data-aui-thread-welcome] {
+    @apply hidden;
+  }
+
+  /* Hide welcome screen when thread is not empty (value false or attribute removed) */
+  [data-aui-thread][data-aui-thread-empty="false"] [data-aui-thread-welcome] {
+    @apply hidden;
+  }
+
+  /* Chat container gradient background for polished look */
+  .chat-container {
+    @apply min-h-screen w-full bg-gradient-to-br from-sky-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-gray-950 dark:to-black;
+    background-image:
+      radial-gradient(circle at 25% 25%, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0) 40%),
+      radial-gradient(circle at 75% 75%, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 40%),
+      radial-gradient(circle at 50% 50%, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 50%);
+    background-blend-mode: overlay;
   }
 }
 
